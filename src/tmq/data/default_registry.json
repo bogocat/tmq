@@ -1,0 +1,107 @@
+{
+  "distillery": {
+    "path": "/root/projects/distillery",
+    "gh": "bogocat/distillery",
+    "worktree": true
+  },
+  "home-portal": {
+    "path": "/root/projects/home-portal",
+    "gh": "bogocat/home-portal",
+    "worktree": true
+  },
+  "tower-fleet": {
+    "path": "/root/tower-fleet",
+    "gh": "bogocat/tower-fleet",
+    "worktree": true
+  },
+  "scripts": {
+    "path": "/root/scripts",
+    "gh": "bogocat/scripts",
+    "worktree": true
+  },
+  "palimpsest": {
+    "path": "/root/projects/palimpsest",
+    "gh": "bogocat/palimpsest",
+    "worktree": false
+  },
+  "rms": {
+    "path": "/root/projects/rms",
+    "gh": "bogocat/openrms",
+    "worktree": false
+  },
+  "deploy": {
+    "path": "/root/deploy/distillery",
+    "gh": "bogocat/distillery",
+    "worktree": false
+  },
+  "frame-cache": {
+    "path": "/root/projects/framecache",
+    "gh": "bogocat/framecache",
+    "worktree": false
+  },
+  "tms": {
+    "path": "/root/tms",
+    "gh": "bogocat/tms",
+    "worktree": true
+  },
+  "timesheet": {
+    "path": "/root/projects/timesheet",
+    "gh": "bogocat/timesheet",
+    "worktree": false
+  },
+  "jellyfin-3ds": {
+    "path": "/root/projects/jellyfin-3ds",
+    "gh": "bogocat/jellyfin-3ds",
+    "worktree": false
+  },
+  "quantumera-tactics": {
+    "path": "/root/projects/quantumera-tactics",
+    "gh": "bogocat/quantumera-tactics",
+    "worktree": false
+  },
+  "subtitleai": {
+    "path": "/root/projects/subtitleai",
+    "gh": "bogocat/subtitlesv2",
+    "worktree": false
+  },
+  "tcg": {
+    "path": "/root/projects/tcg",
+    "gh": "bogocat/tcg",
+    "worktree": false
+  },
+  "trip-planner": {
+    "path": "/root/projects/trip-planner",
+    "gh": "bogocat/trip-planner",
+    "worktree": false
+  },
+  "music-control": {
+    "path": "/root/projects/music-control",
+    "gh": "bogocat/music-control",
+    "worktree": false
+  },
+  "music-display": {
+    "path": "/root/projects/music-display",
+    "gh": "bogocat/music-display",
+    "worktree": false
+  },
+  "garden": {
+    "path": "/root/projects/garden",
+    "gh": "bogocat/garden",
+    "worktree": false
+  },
+  "garmin-doctor": {
+    "path": "/root/projects/garmin-doctor",
+    "gh": "bogocat/garmin-doctor",
+    "worktree": true
+  },
+  "pi-dotfiles": {
+    "path": "/root/pi-dotfiles",
+    "gh": "bogocat/pi-dotfiles",
+    "worktree": true
+  },
+  "tmq": {
+    "path": "/root/bogocat-tmq",
+    "gh": "bogocat/tmq",
+    "worktree": true
+  }
+}

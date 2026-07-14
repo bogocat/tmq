@@ -1,0 +1,115 @@
+[project]
+name = "tmq"
+description = "tmq — spawn a coding agent on a GitHub issue. Agent of Empires plugin + standalone CLI."
+dynamic = ["version"]
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+# Runtime dependencies. psycopg2-binary for the events writer; flake8-pyi
+# and pylint don't ship here (linting stays in dev). We intentionally
+# avoid httpx / requests -- the plugin shells `gh` and `git` rather than
+# round-tripping a Python client, keeping the runtime slim and giving
+# operators the same audit trail they had under the bash tool.
+dependencies = [
+    "psycopg2-binary>=2.9",
+]
+
+[project.scripts]
+# The plugin host spawns this console script as the Tier 1 worker.
+tmq-worker = "tmq.worker:main"
+# Backward-compat CLI: the fleet has been running `tmq <repo> <n>` from
+# /usr/local/bin/tmq since 2024. This keeps that muscle memory working.
+tmq = "tmq.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/tmq/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tmq"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.14.1",
+    "pre-commit>=4.0.1",
+    "pytest>=8.3.4",
+    "ruff>=0.11.4",
+]
+
+[tool.mypy]
+python_version = "3.10"
+mypy_path = "src"
+warn_unused_configs = true
+disallow_untyped_defs = true
+show_error_codes = true
+explicit_package_bases = true
+
+[tool.ruff]
+exclude = [".aoe-build", ".venv", "venv", "build", "dist"]
+line-length = 120
+indent-width = 4
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D",        # not every function needs a docstring
+    "ANN401",   # Any is intentional at the JSON-RPC boundary
+    "EM101",    # actionable hints are string literals by design
+    "EM102",
+    "TRY003",
+    "COM812",   # conflicts with the formatter
+    "ISC001",
+    "CPY001",   # no per-file copyright header
+    # Style noise we accept deliberately (see tests/per-file overrides too):
+    "ARG001",   # unused function args (fixtures, mocks)
+    "ARG002",   # unused positional args
+    "ARG005",   # lambda ignores kwargs
+    "FBT001",   # bool-typed positional in handlers/wrappers
+    "FBT003",   # bool positional in calls
+    "PLR0911",  # too many returns (handlers dispatch)
+    "PLR2004",  # magic numbers in tests
+    "PTH118",   # os.path.join acceptable in cli.py
+    "PTH123",   # builtin open() is fine
+    "SLF001",   # tests need to see private helpers
+    "PIE790",   # allow pass/ellipsis in stubs
+    "SIM108",   # ternary collapses are fine but ugly here
+    "E501",     # 120-char lines, rare overflow accepted
+    "T201",     # cli.py / handlers.py intentionally print()
+    "PLR0913",  # events.py API mirrors the tms schema (no choice in param count)
+    "PLC0415",  # lazy imports break circular dep between handlers and gh/spawn
+    "S603",     # subprocess argv is fixed and never shell-interpolated
+    "S607",     # gh / git / aoe / tmux are PATH-resolved on purpose
+    "S108",     # /tmp/tmq-* is the intentional contract from tms/bin/tmq
+    "BLE001",   # subprocess / host RPC boundaries must swallow python internals
+    "C901",     # _process does protocol dispatch; abstracting would be worse
+    "TC001",    # TC blocks are noisy in this small codebase
+    "TC003",    # ditto
+    "PIE810",   # single-call endswith tuple is fine
+    "SIM102",   # collapsible-if at module boundary is fine
+    "SIM105",   # best-effort aoe cleanup on failure is fine without contextlib
+    "SIM110",   # ditto
+    "SIM117",   # nested with-statements in tests drive fixtures independently
+    "S110",     # pane UI updates never fail the response
+    "S112",     # line-read loop catches json errors silently by design
+    "PTH110",   # tmq/python-stdlib uses os.path.exists for path strings
+    "PTH112",   # os.path.isdir is fine
+    "TRY203",   # re-raise is intentional for the spawn path
+    "PT011",    # intentional, asserts any worker error during dispatch
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "ANN", "INP001", "D", "S603", "SLF001", "PLR0915", "PLR2004", "ARG001", "ARG002", "ARG005", "SIM117", "S108", "TRY203", "PTH110"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = ["--strict-markers"]

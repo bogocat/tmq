@@ -1,0 +1,215 @@
+# tmq -- an Agent of Empires plugin.
+#
+# tmq is the issue->agent dispatcher: it fetches a GitHub issue (or PR),
+# constructs a prompt, creates a git worktree, and spawns a coding agent via the
+# Agent of Empires daemon (aoe) -- falling back to raw tmux when aoe is missing
+# or the add/start sequence fails. This manifest declares the plugin's
+# contribution surface; the meat lives in src/tmq/.
+#
+# Manifest schema: aoe-plugin-api/src/manifest.rs in agent-of-empires. The host
+# parses this strictly (deny_unknown_fields), so every key here must match a
+# field in that schema. Field-by-field reference:
+# https://agent-of-empires.com/docs/api/plugin-api/
+
+id = "bogocat.tmq"
+name = "tmq"
+version = "0.1.0"
+
+# Manifest schema / host API version. The host rejects a manifest whose
+# api_version it does not support. v8 enables the `composer-action`
+# UI slot, which we don't use; v6 already gives us commands, settings,
+# ui slots (including pane from v3), status (v4), screenshots (v5),
+# and command actions (v6). Bump only when a feature requires it.
+api_version = 6
+
+# Host-app compatibility range (a different axis from api_version). Requires
+# api_version >= 4.
+aoe_version = ">=1.11.0, <2.0.0"
+
+description = "tmq -- spawn a coding agent on a GitHub issue. Agent of Empires plugin + standalone CLI."
+
+# ── Capabilities ─────────────────────────────────────────────────────────────────
+#
+# Each grant is prompted at install and pinned to the manifest hash. An update
+# that widens the set must be re-approved.
+#
+# - runtime.worker      — the worker calls config.get and (in pane mode) pushes
+#                         per-state ui.state.set messages; both are worker-side
+#                         host RPCs.
+# - process.spawn       — the worker shells out: `gh issue/pr view`,
+#                         `git worktree add`, `aoe add`, `aoe session start`,
+#                         and the tmux fallback (`tmux new-session -d`).
+#                         Without this grant every handler turns into a
+#                         MethodNotFoundError at runtime.
+# - net                 — `gh` CLI hits api.github.com; the worker reads the
+#                         GitHub JSON. Subprocess argv is fixed and never
+#                         shell-interpolated (so no S603 footgun in handlers).
+# - fs.read             — every dispatched agent gets a /tmp/tmq-prompt-*.txt
+#                         file injected into its prompt; pane state reads
+#                         ~/.config/tmq/registry.json + ~/.local/state/tmq.
+# - fs.write            — same prompt-file write, plus registry.json updates.
+# - notifications        — pane UI surface (`ui.state.set`) plus an opt-in
+#                         `ui.notify` for rate-limit / reviewer-overlap
+#                         warnings matching the production plugin-github
+#                         contract.
+#
+# Session.correlate isn't requested because tmq owns the session lifecycle --
+# it creates the aoe session, so it doesn't need to read peer sessions beyond
+# the optional pane-state diff (handled with sessions.list).
+capabilities = [
+    "runtime.worker",
+    "process.spawn",
+    "net",
+    "fs.read",
+    "fs.write",
+    "notifications",
+]
+
+# ── Commands ────────────────────────────────────────────────────────────────────
+#
+# The host namespacing is `plugin.bogocat.tmq.<id>`. Worker dispatch dispatches
+# on the trailing segment, so all four map cleanly regardless of host prefix.
+
+# Launches the issue-to-agent pipeline: fetch issue, worktree, prompt,
+# aoe add + session start (or tmux fallback), event-log a row.
+# Returns synchronously once the session is registered.
+[[commands]]
+id = "dispatch"
+title = "tmq: dispatch"
+description = "Spawn a coding agent on a GitHub issue (or PR review)."
+
+# Convenience entry point equivalent to `tmq review <repo> <pr>` /
+# `tmq pr <repo> <pr>`. Resolves an issue-number input to its linked PR (tms
+# #10 review P1), then dispatches `--type review` on the resolved PR.
+[[commands]]
+id = "review"
+title = "tmq: review"
+description = "Spawn a code-review agent on a pull request (issues resolve to linked PRs)."
+
+# Lists every repo the plugin knows how to dispatch to -- sourced from the
+# JSON registry (a setting), not a hardcoded list. The 24 repos from
+# tms/bin/tmq ship as the default registry at aoe_tmq/data/default_registry.json.
+[[commands]]
+id = "list_repos"
+title = "tmq: list repos"
+description = "Show every repo the plugin can dispatch to (with path, gh slug, worktree policy)."
+
+# Pane surface. Returns a worker health snapshot plus the in-flight dispatch
+# list (current pane pushes already cover this; status collapses them into a
+# single prompt-style reply for callers without a pane).
+[[commands]]
+id = "status"
+title = "tmq: status"
+description = "Worker health, last 10 events, current in-flight dispatches."
+
+# ── Settings ────────────────────────────────────────────────────────────────────
+#
+# Stored at [plugins."bogocat.tmq".settings]. Workers read each via the
+# config.get host RPC. Defaults line up with the bash predecessor so a brand
+# install is behavior-equivalent to the old `cp -r bin lib /usr/local/`.
+
+# Default agent when `--agent` is not given. Match the old DEFAULT_AGENT in
+# tms/bin/tmq: "pi" (the MiniMax M3 agent, dispatched via pi). pi validates
+# the id before launch; cc refuses --dangerously-skip-permissions under
+# root/sudo and needs opt-in (see allow_root_cc).
+[[settings]]
+key = "default_agent"
+label = "Default agent"
+description = "Agent used when --agent is not passed on the CLI / RPC. Mirrors DEFAULT_AGENT in tms/bin/tmq."
+type = "select"
+options = ["pi", "cc", "oc"]
+default = "pi"
+
+# Forwarded to pi's --provider flag. Empty = pi default provider.
+# tms#37 fixes a silent-ignore bug; the worker still rejects the flag when
+# default_agent != pi (--agent cc/oc has no model/provider switch).
+[[settings]]
+key = "pi_provider"
+label = "Default pi provider"
+description = "Passed to pi's --provider flag on every pi dispatch (empty = pi default). pi-only; cc/oc ignore it."
+type = "string"
+default = ""
+
+# Forwarded to pi's --model flag. Empty = pi default model.
+[[settings]]
+key = "pi_model"
+label = "Default pi model"
+description = "Passed to pi's --model flag on every pi dispatch (empty = pi default). pi-only; cc/oc ignore it."
+type = "string"
+default = ""
+
+# Where the registry JSON lives. Shipped default is the package data file;
+# user override at ~/.config/tmq/registry.json shadows it. The worker loads
+# on every dispatch; a missing/empty file falls back to the shipped defaults
+# (preserving the 24-repo baseline).
+[[settings]]
+key = "registry_path"
+label = "Repo registry JSON"
+description = "Path to a JSON file overriding the shipped repo registry. Empty/unset/missing = use shipped defaults at aoe_tmq/data/default_registry.json."
+type = "string"
+default = ""
+advanced = true
+
+# Postgres DSN for the dispatch event log. Empty = read TMTM_DSN env var;
+# failing that, psql service=bogocat (the unified fleet DB on 10.89.97.212).
+# Closed-everyone write access requires the tmq_writer role; readers of the
+# log are tms + the metrics pages in home-portal.
+[[settings]]
+key = "events_dsn"
+label = "Events Postgres DSN"
+description = "Connection string for the tms_review.events writer. Empty = TMTM_DSN env var, then psql service=bogocat. Used for append_event on every dispatch."
+type = "string"
+default = ""
+advanced = true
+
+# tms#39: cc dispatch under root/sudo dies instantly because claude code
+# refuses --dangerously-skip-permissions. Default OFF (fail fast); opt in
+# with this setting or the TMQ_ALLOW_ROOT_CC=1 env var.
+[[settings]]
+key = "allow_root_cc"
+label = "Allow cc dispatch under root"
+description = "Opt in to spawning an autonomous Claude Code agent under root/sudo. Off by default (tms#39). When on, --dangerously-skip-permissions runs with no permission guardrails; deliberate security tradeoff."
+type = "boolean"
+default = false
+
+# ── Status ─────────────────────────────────────────────────────────────────────
+#
+# api_version >= 4 required. The status surface consumes these segments.
+# Future: connect to a per-model outcome rate from the dispatch event log.
+
+[[status]]
+id = "tmq_runtime"
+label = "tmq worker"
+
+# ── UI slots ───────────────────────────────────────────────────────────────────
+#
+# The pane is the live tmq surface: in-flight dispatches + last 10 events.
+# Per-session slots deliberately omitted -- tmq is the dispatcher, not an
+# attached peer to a single session.
+
+[[ui]]
+slot = "pane"
+id = "tmq_pane"
+
+# ── Worker (Tier 1) ────────────────────────────────────────────────────────────
+#
+# The host spawns this process on demand when the user invokes a tmq command,
+# and supervises a long-lived instance for the pane. JSON-RPC 2.0 over
+# ndjson on stdio; method dispatch on the trailing segment (per the plugin
+# template's worker.py). Exits on stdin EOF.
+#
+# Entry point MUST be plugin-relative so the daemon's PATH doesn't decide
+# whether the worker launches. The build steps run in the user's interactive
+# shell at install/update, where PATH is reliable (python3 + pip resolve).
+
+[runtime]
+kind = "command"
+command = [".aoe-build/venv/bin/tmq-worker"]
+
+[[runtime.build]]
+command = ["python3", "-m", "venv", ".aoe-build/venv"]
+platforms = ["linux", "macos"]
+
+[[runtime.build]]
+command = [".aoe-build/venv/bin/pip", "install", "."]
+platforms = ["linux", "macos"]
