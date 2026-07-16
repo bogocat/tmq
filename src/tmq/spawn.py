@@ -140,6 +140,18 @@ def _spawn_via_aoe(req: SpawnRequest, cmd_override: str) -> SpawnResult:
     wt_flags: list[str] = []
     if req.branch:
         wt_flags = ["-w", req.branch]
+
+    # Best-effort purge of any stale session record.  `aoe rm` without
+    # `--purge` leaves the session record with a stale `command:` field,
+    # so `aoe add` for the same title re-registers silently with the OLD
+    # command.  `--purge` drops the full record; if the session does not
+    # exist `aoe rm` exits non-zero and we carry on (the `aoe add` below
+    # will surface any real error).
+    try:
+        _run(["aoe", "rm", "--purge", req.session_name], check=False)
+    except SpawnError:
+        pass
+
     try:
         _run(
             [

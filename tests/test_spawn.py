@@ -114,6 +114,18 @@ def test_spawn_via_aoe_includes_w_with_branch():
     assert argv[w_idx + 1] == "feat/issue-245-rebase"
 
 
+def test_spawn_via_aoe_purges_before_add():
+    """`aoe rm --purge` must fire before `aoe add` so re-dispatch picks up
+    the new cmd-override even when the prior session was removed without --purge."""
+    req = _req("pi", branch=None)
+    call_sequence = _captured_aoe_call_sequence(req)
+    cmds = [c[:3] if len(c) >= 3 else c for c in call_sequence]
+    # First call must be aoe rm --purge
+    assert cmds[0] == ["aoe", "rm", "--purge"], f"expected aoe rm --purge first, got: {cmds}"
+    # Second call must be aoe add
+    assert cmds[1] == ["aoe", "add", req.cwd], f"expected aoe add second, got: {cmds}"
+
+
 def test_spawn_via_aoe_includes_cmd_override_with_approve():
     """End-to-end: the full aoe add argv carries a --approve-bearing cmd_override."""
     req = _req("pi")
@@ -121,6 +133,30 @@ def test_spawn_via_aoe_includes_cmd_override_with_approve():
     co_idx = argv.index("--cmd-override")
     cmd = argv[co_idx + 1]
     assert "--approve" in cmd
+
+
+def _captured_aoe_call_sequence(req: SpawnRequest) -> list[list[str]]:
+    """Drive spawn.spawn() with all subprocess calls mocked, capture the
+    full sequence of `_run` argv calls (rm, add, session start, etc.).
+    """
+    captured: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        captured.append(list(args))
+        m = mock.Mock()
+        m.returncode = 0
+        m.stdout = '{"id": "abcdef1234567890"}'
+        m.stderr = ""
+        return m
+
+    with mock.patch.object(spawn.shutil, "which", return_value="/usr/local/bin/aoe"):
+        with mock.patch.object(spawn, "_run", side_effect=fake_run):
+            with mock.patch.object(spawn, "prompt_path_for", return_value=req.prompt_path):
+                try:
+                    spawn_top(req)
+                except spawn.SpawnError:
+                    pass
+    return captured
 
 
 def _captured_aoe_argv(req: SpawnRequest) -> list[str]:
