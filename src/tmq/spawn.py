@@ -100,7 +100,7 @@ def _build_cmd_override(req: SpawnRequest) -> str:
             extra += f" --provider {req.pi_provider}"
         if req.pi_model:
             extra += f" --model {req.pi_model}"
-        return f"PI_DISPATCH_AUTOAPPROVE=1 pi{extra} @{p}; echo; echo '--- PI DONE ---'; exec bash"
+        return f"PI_DISPATCH_AUTOAPPROVE=1 pi{extra} --approve @{p}; echo; echo '--- PI DONE ---'; exec bash"
     if req.agent == "oc":
         return f"cat '{p}' | opencode 2>&1; echo; echo '--- OPENCODE DONE ---'; exec bash"
     raise SpawnError(f"unknown agent: {req.agent!r}")
@@ -137,9 +137,9 @@ def _spawn_via_aoe(req: SpawnRequest, cmd_override: str) -> SpawnResult:
     if shutil.which("aoe") is None:
         return _spawn_via_tmux(req, cmd_override)
     aoe_tool = _aoe_tool_name(req.agent)
-    wt_flag = ""
+    wt_flags: list[str] = []
     if req.branch:
-        wt_flag = f"-w {req.branch}"
+        wt_flags = ["-w", req.branch]
     try:
         _run(
             [
@@ -150,7 +150,7 @@ def _spawn_via_aoe(req: SpawnRequest, cmd_override: str) -> SpawnResult:
                 req.session_name,
                 "--tool",
                 aoe_tool,
-                wt_flag,
+                *wt_flags,
                 "--trust-hooks",
                 "--cmd-override",
                 cmd_override,

@@ -13,7 +13,7 @@
 
 id = "bogocat.tmq"
 name = "tmq"
-version = "0.1.0"
+version = "0.1.1"
 
 # Manifest schema / host API version. The host rejects a manifest whose
 # api_version it does not support. v8 enables the `composer-action`
