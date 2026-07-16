@@ -1,15 +1,20 @@
-"""Worktree management — git worktree add/find/clean with feature-branch naming.
+"""Worktree management — git worktree add/find/clean with type-prefixed branches.
 
 Layout matches tms/bin/tmq's `create_worktree` function:
 
-- Feature work in a worktree-enabled repo lives in ``/root/wt-<short>-<num>``
-  on a feature branch ``feat/issue-<num>-<slug>``.
-- Fix/chore on a worktree-enabled repo still goes in main via the main
-  checkout (no isolation) because bash treats them as single-line edits.
-- All work in a worktree-disabled repo goes in the main checkout, full stop.
+- All dispatched work in a worktree-enabled repo (``repo.worktree=True``)
+  lives in ``/root/wt-<short>-<num>`` on a typed branch
+  (``feat/``, ``fix/``, or ``chore/`` prefixed). The dispatch-loop skill
+  (Step 1) requires every dispatched agent to isolate its work; prior
+  versions of this module sent ``fix`` and ``chore`` to the main checkout,
+  which slipped into merged-but-uncommitted-on-main PRs (see
+  ``tower-fleet#200`` for the concrete failure mode).
+- Review dispatches and work in a worktree-disabled repo still go in the
+  main checkout (review edits live on the PR's branch, and operators
+  opting out of worktrees get in-place behavior they expect).
 
-Branch slug is a 30-char title-derived kebab. If a feature branch already
-exists from a previous dispatch we reuse it instead of failing the dispatch
+Branch slug is a 30-char title-derived kebab. If a branch already exists
+from a previous dispatch we reuse it instead of failing the dispatch
 (this matches the bash `git checkout -B` behavior at create_worktree:653-660).
 """
 
@@ -75,9 +80,27 @@ def _main_checkout(repo: RepoEntry) -> str:
     return repo.path
 
 
-def _feature_branch_name(issue_number: int, title: str) -> str:
+def _branch_name(issue_number: int, title: str, issue_type: str) -> str:
+    """Per-issue branch name, type-prefixed: ``feat/``, ``fix/``, ``chore/``.
+
+    All dispatched work in a worktree-enabled repo uses the same
+    ``wt-<short>-<num>`` path; the prefix is the only difference between
+    types. ``review`` falls back to the main checkout (``head_branch``
+    handles it) and never reaches this function.
+    """
+    prefix = {"feature": "feat", "fix": "fix", "chore": "chore"}.get(issue_type, "feat")
     slug = gh_helper.slugify(title)[:SLUG_MAX].rstrip("-")
-    return f"feat/issue-{issue_number}-{slug}" if slug else f"feat/issue-{issue_number}"
+    return f"{prefix}/issue-{issue_number}-{slug}" if slug else f"{prefix}/issue-{issue_number}"
+
+
+def _feature_branch_name(issue_number: int, title: str) -> str:
+    """Backwards-compatible wrapper for the ``feature`` type.
+
+    The dispatch-loop prompt and external callers imported this name
+    before the type-aware refactor; keeping the signature stable preserves
+    those callers until they migrate.
+    """
+    return _branch_name(issue_number, title, "feature")
 
 
 def _worktree_path(short: str, issue_number: int) -> str:
@@ -147,16 +170,22 @@ def create(repo: RepoEntry, issue_number: int, title: str, issue_type: str) -> W
         raise WorktreeError(f"repo path {repo.path!r} is not a directory")
 
     main_branch = _git_remote_main(repo)
-    if issue_type in {"fix", "chore"}:
-        # In-place on main — used for quick fixes and chores. The agent is
-        # expected to commit + push via the dispatch-loop prompt.
+
+    # Review dispatches are routed through ``head_branch`` and never reach
+    # this path, but defend against it anyway — review edits live on the
+    # PR's checked-out branch, not on a fresh per-issue branch.
+    if issue_type == "review":
         return WorktreeResult(cwd=repo.path, branch=main_branch)
 
-    # Feature / review path: worktree when the policy says yes, in-place
-    # otherwise. Review pass-through reuses the PR's checked-out workdir if
-    # the calling agent already has it; otherwise creates one.
-    if repo.worktree and issue_type == "feature":
-        branch = _feature_branch_name(issue_number, title)
+    # All non-review dispatched types get an isolated worktree when the
+    # repo opts in. Previously ``fix`` and ``chore`` went in-place on
+    # ``main``, which slipped into merged-but-uncommitted-on-main PRs
+    # (see ``tower-fleet#200`` for the concrete failure mode) and made
+    # parallel agent dispatch unsafe. The dispatch-loop skill (Step 1)
+    # already requires isolation; this change makes tmq honor that
+    # uniformly across types.
+    if repo.worktree and issue_type in {"feature", "fix", "chore"}:
+        branch = _branch_name(issue_number, title, issue_type)
         existing = _existing_feat_branch(repo, branch)
         if existing is not None:
             return WorktreeResult(cwd=existing, branch=branch)
@@ -180,7 +209,7 @@ def create(repo: RepoEntry, issue_number: int, title: str, issue_type: str) -> W
             return WorktreeResult(cwd=repo.path, branch=main_branch)
         return WorktreeResult(cwd=wt_path, branch=branch)
 
-    # review in a non-worktree repo, or anything else: in-place.
+    # Anything else: in-place on main.
     return WorktreeResult(cwd=repo.path, branch=main_branch)
 
 
