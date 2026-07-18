@@ -166,6 +166,69 @@ def append_event(
     return event_id
 
 
+# ── Model resolution ──────────────────────────────────────────────
+
+# Map model → provider from the known fleet configuration.
+# See institutional memory: data-driven-model-selection.md.
+# Refines tms/lib/tms/events.py:MODEL_TO_PROVIDER (tms#73).
+# tmq#7's resolver is more aggressive: known fleet models always
+# resolve to their mapped provider, overriding any caller-supplied
+# provider (intentional divergence from tms#73, which preserves
+# explicit providers even for known models).
+MODEL_TO_PROVIDER = {
+    "deepseek-v4-pro": "deepseek",
+    "MiniMax-M3": "minimax",
+    "MiniMax-M3.5": "minimax",
+    "glm-5.2": "zai",
+}
+
+
+def _resolve_default_model() -> tuple[str, str]:
+    """Resolve the actually-served model from pi's settings file.
+
+    When tmq dispatches pi without --provider/--model flags, the agent
+    uses the default from ~/.pi/agent/settings.json. We resolve this
+    at event-write time so the dispatch record carries the real model,
+    not an empty string. Returns (provider, model) tuple.
+    """
+    import json as _json
+
+    settings_path = os.path.expanduser("~/.pi/agent/settings.json")
+    try:
+        with open(settings_path) as f:
+            settings = _json.load(f)
+    except (FileNotFoundError, _json.JSONDecodeError, OSError):
+        return ("", "")
+
+    model = settings.get("defaultModel", "")
+    if not model:
+        return ("", "")
+
+    provider = MODEL_TO_PROVIDER.get(model, "unknown")
+    return (provider, model)
+
+
+def _resolve_dispatch_model(provider: str, model: str) -> tuple[str, str]:
+    """Resolve event provenance from explicit flags, then pi defaults.
+
+    Refines tms#73: an explicit model determines its provider from the
+    fleet map, and the mapping is authoritative — a known model always
+    resolves to its mapped provider, overriding any caller-supplied
+    provider (tms#73 preserves explicit providers even for known models;
+    this divergence is intentional so stale defaults can't leak).
+    For unknown models, the explicit provider (if any) is preserved.
+    Defaults are consulted only when the invocation supplies no model.
+    """
+    if model:
+        resolved = MODEL_TO_PROVIDER.get(model)
+        if resolved:
+            return (resolved, model)
+        return (provider or "unknown", model)
+
+    resolved_provider, resolved_model = _resolve_default_model()
+    return (provider or resolved_provider, resolved_model)
+
+
 def log_dispatch(
     *,
     repo: str,
@@ -185,6 +248,7 @@ def log_dispatch(
     so the metrics rows distinguish them; aoe_id is the 8-char prefix
     the bash tool computed via ``aoe session show --json``.
     """
+    provider, model = _resolve_dispatch_model(provider, model)
     return append_event(
         event_type="dispatch",
         repo=repo,
@@ -215,6 +279,7 @@ def log_dispatch_failed(
     """The failure path: tms#39 (cc root refusal), aoe add failed, aoe
     session start failed, etc. ``reason`` is the actionable hint.
     """
+    provider, model = _resolve_dispatch_model(provider, model)
     return append_event(
         event_type="dispatch_failed",
         repo=repo,
