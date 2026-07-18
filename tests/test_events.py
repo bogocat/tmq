@@ -35,37 +35,6 @@ def _last_insert_params(mock_cursor):
     return call_args[0][1]  # args[0] = (sql, params)
 
 
-# ── Helper: resolve dispatch model ───────────────────────────────
-
-# Map model → provider from the known fleet configuration.
-# Same mapping as tms/lib/tms/events.py:MODEL_TO_PROVIDER.
-MODEL_TO_PROVIDER = {
-    "deepseek-v4-pro": "deepseek",
-    "MiniMax-M3": "minimax",
-    "MiniMax-M3.5": "minimax",
-    "glm-5.2": "zai",
-}
-
-
-def _resolve_dispatch_model(provider: str, model: str):
-    """Port of tms#73's resolver — mirror what events.py should do.
-
-    An explicit model determines its missing provider from the fleet map.
-    Defaults are consulted only when the invocation supplies no model.
-    """
-    if model:
-        return (provider or MODEL_TO_PROVIDER.get(model, "unknown"), model)
-
-    # Resolve from pi defaults (mocked in tests below)
-    resolved_provider, resolved_model = _resolve_default_model()
-    return (provider or resolved_provider, resolved_model)
-
-
-def _resolve_default_model():
-    """Stub — tests override with mock.patch on events._resolve_default_model."""
-    return ("", "")
-
-
 # ── Tests ─────────────────────────────────────────────────────────
 
 

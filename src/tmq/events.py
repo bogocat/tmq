@@ -170,7 +170,11 @@ def append_event(
 
 # Map model → provider from the known fleet configuration.
 # See institutional memory: data-driven-model-selection.md.
-# Mirrors tms/lib/tms/events.py:MODEL_TO_PROVIDER (tms#73).
+# Refines tms/lib/tms/events.py:MODEL_TO_PROVIDER (tms#73).
+# tmq#7's resolver is more aggressive: known fleet models always
+# resolve to their mapped provider, overriding any caller-supplied
+# provider (intentional divergence from tms#73, which preserves
+# explicit providers even for known models).
 MODEL_TO_PROVIDER = {
     "deepseek-v4-pro": "deepseek",
     "MiniMax-M3": "minimax",
@@ -207,10 +211,12 @@ def _resolve_default_model() -> tuple[str, str]:
 def _resolve_dispatch_model(provider: str, model: str) -> tuple[str, str]:
     """Resolve event provenance from explicit flags, then pi defaults.
 
-    An explicit model determines its provider from the fleet map.
-    When the model is a known fleet model, the mapping is authoritative
-    — a stale default provider must never override it. For unknown
-    models, the explicit provider (if any) is preserved.
+    Refines tms#73: an explicit model determines its provider from the
+    fleet map, and the mapping is authoritative — a known model always
+    resolves to its mapped provider, overriding any caller-supplied
+    provider (tms#73 preserves explicit providers even for known models;
+    this divergence is intentional so stale defaults can't leak).
+    For unknown models, the explicit provider (if any) is preserved.
     Defaults are consulted only when the invocation supplies no model.
     """
     if model:
