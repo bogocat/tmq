@@ -34,7 +34,7 @@ def test_prompt_includes_chunking_policy():
     pi = _prompt_input()
     issue = _fake_issue()
     output = prompt.build_issue_prompt(pi, issue)
-    assert "chunk" in output.lower(), "prompt must mention chunking"
+    assert prompt.CHUNKING_POLICY in output, "prompt must include CHUNKING_POLICY constant"
 
 
 def test_prompt_chunking_mentions_threshold():
@@ -58,7 +58,7 @@ def test_prompt_structure_includes_marker_contract():
     pi = _prompt_input()
     issue = _fake_issue()
     output = prompt.build_issue_prompt(pi, issue)
-    assert "<<AGENT-STATE:" in output, "prompt must include the state marker contract"
+    assert prompt.AGENTS_MARKER_CONTRACT in output, "prompt must include AGENTS_MARKER_CONTRACT constant"
 
 
 def test_prompt_structure_includes_ac_header():
@@ -66,4 +66,37 @@ def test_prompt_structure_includes_ac_header():
     pi = _prompt_input()
     issue = _fake_issue()
     output = prompt.build_issue_prompt(pi, issue)
-    assert "Acceptance criteria" in output, "prompt must include the AC header"
+    assert prompt.AC_HEADER in output, "prompt must include AC_HEADER constant"
+
+
+def test_prompt_section_ordering():
+    """Sections must appear in order: AC header < marker contract < chunking policy < issue body."""
+    pi = _prompt_input()
+    issue = _fake_issue()
+    output = prompt.build_issue_prompt(pi, issue)
+    ac_pos = output.index("Acceptance criteria")
+    contract_pos = output.index("State contract")
+    chunking_pos = output.index("Chunking policy")
+    body_pos = output.index("Issue body")
+    assert ac_pos < contract_pos < chunking_pos < body_pos, (
+        f"section order wrong: AC={ac_pos} contract={contract_pos} "
+        f"chunking={chunking_pos} body={body_pos}"
+    )
+
+
+def test_pr_prompt_excludes_chunking_policy():
+    """Chunking policy must NOT leak into PR review prompts."""
+    from tmq.gh import PrView
+
+    pi = _prompt_input()
+    pr = PrView(
+        number=10,
+        title="Test PR",
+        body="PR body",
+        url="https://github.com/bogocat/tmq/pull/10",
+        state="OPEN",
+        base_ref="main",
+        head_ref="feat/test",
+    )
+    output = prompt.build_pr_prompt(pi, pr)
+    assert prompt.CHUNKING_POLICY not in output, "CHUNKING_POLICY must not leak into PR review prompts"

@@ -53,7 +53,7 @@ for plan approval.  Your plan MUST include:
 ### Stacked-PR safety
 
 When chunks stack (PR-2 depends on PR-1's branch), merge them in order.
-Never use `--delete-branch` when pushing a stacked PR — deleting a base
+Never use `--delete-branch` when merging a stacked PR — deleting a base
 branch closes every dependent PR.  Delete branches only after the full
 stack lands on main.
 
