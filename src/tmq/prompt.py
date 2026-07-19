@@ -39,6 +39,28 @@ Title: {title}
 
 """
 
+CHUNKING_POLICY = """\
+## Chunking policy
+
+If your plan projects a diff larger than 500 lines (insertions + deletions),
+you MUST decompose the work into a sequence of ≤500-line PRs before asking
+for plan approval.  Your plan MUST include:
+
+- **Projected diff size** (estimated insertions + deletions).
+- **Chunk plan** (ordered sub-PRs, each with a one-line summary and its
+  dependency — "stacks on PR-1" or "independent").
+
+### Stacked-PR safety
+
+When chunks stack (PR-2 depends on PR-1's branch), merge them in order.
+Never use `--delete-branch` when pushing a stacked PR — deleting a base
+branch closes every dependent PR.  Delete branches only after the full
+stack lands on main.
+
+---
+
+"""
+
 AC_HEADER = """\
 ## Acceptance criteria
 
@@ -132,6 +154,7 @@ def build_issue_prompt(p: PromptInput, issue: IssueView) -> str:
         _header(p),
         AC_HEADER,
         AGENTS_MARKER_CONTRACT,
+        CHUNKING_POLICY,
         _issue_body(issue),
     ]
     return "\n".join(parts)

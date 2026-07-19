@@ -94,6 +94,41 @@ src/tmq/
 tests/                 worker-contract, handlers, registry, worktree, gh, pane-push
 ```
 
+## Chunking policy
+
+Dispatched agents are instructed to decompose large PRs at the plan gate.
+When an agent's plan projects a diff larger than **500 lines** (insertions +
+deletions), the plan must include a **chunk plan** — an ordered sequence of
+≤500-line sub-PRs with explicit dependencies — before the human approves.
+
+### Example chunk plan
+
+```
+Projected diff: ~850 lines
+Chunk plan:
+  1. Add shared types and validation utilities        (~180 lines, independent)
+  2. Implement core logic (stacks on PR-1)             (~300 lines, stacks on 1)
+  3. Wire CLI entry point + integration tests          (~220 lines, stacks on 2)
+  4. Update README + docs                              (~150 lines, independent)
+```
+
+### Stacked-PR safety
+
+When chunks stack (e.g. PR-2 depends on PR-1's branch):
+
+- **Merge in order** — merge PR-1 first, then PR-2, etc.
+- **Never use `--delete-branch` on a stacked PR** — deleting a base branch
+  closes every dependent PR.
+- Delete branches only after the full stack lands on main.
+
+### Rationale
+
+Industry data shows AI review returns diminish sharply above 500 lines
+(models fall back to surface pattern-matching). Our own evidence agrees:
+tms#87 was +1210 lines and needed 6 review rounds including a FAIL.
+Chunking at the plan gate keeps each review small enough to get a thorough
+multi-model panel.
+
 ## Develop
 
 This plugin uses [uv](https://docs.astral.sh/uv/) for the test loop. System
