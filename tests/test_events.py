@@ -47,9 +47,14 @@ class TestLogDispatchProviderResolution:
             from tmq.events import log_dispatch
 
             log_dispatch(
-                repo="tms", issue=83, agent="pi",
-                provider="", model="MiniMax-M3",
-                dispatch_type="fix", cwd="/tmp/wt", session_name="fix-tms#83",
+                repo="tms",
+                issue=83,
+                agent="pi",
+                provider="",
+                model="MiniMax-M3",
+                dispatch_type="fix",
+                cwd="/tmp/wt",
+                session_name="fix-tms#83",
             )
             params = _last_insert_params(cursor)
             # provider column (index 7 in INSERT: id,created_at,event_ts,event_type,
@@ -64,9 +69,14 @@ class TestLogDispatchProviderResolution:
             from tmq.events import log_dispatch
 
             log_dispatch(
-                repo="tms", issue=83, agent="pi",
-                provider="custom-p", model="custom-m",
-                dispatch_type="fix", cwd="/tmp/wt", session_name="fix-tms#83",
+                repo="tms",
+                issue=83,
+                agent="pi",
+                provider="custom-p",
+                model="custom-m",
+                dispatch_type="fix",
+                cwd="/tmp/wt",
+                session_name="fix-tms#83",
             )
             params = _last_insert_params(cursor)
             assert params[7] == "custom-p"
@@ -88,9 +98,14 @@ class TestLogDispatchProviderResolution:
             from tmq.events import log_dispatch
 
             log_dispatch(
-                repo="tms", issue=83, agent="pi",
-                provider="", model=model,
-                dispatch_type="fix", cwd="/tmp/wt", session_name="fix-tms#83",
+                repo="tms",
+                issue=83,
+                agent="pi",
+                provider="",
+                model=model,
+                dispatch_type="fix",
+                cwd="/tmp/wt",
+                session_name="fix-tms#83",
             )
             params = _last_insert_params(cursor)
             assert params[7] == expected_provider
@@ -109,28 +124,35 @@ class TestLogDispatchProviderResolution:
 
             # Simulate: settings.pi_provider='stale-default' but args.model='MiniMax-M3'
             log_dispatch(
-                repo="tms", issue=83, agent="pi",
-                provider="stale-default", model="MiniMax-M3",
-                dispatch_type="fix", cwd="/tmp/wt", session_name="fix-tms#83",
+                repo="tms",
+                issue=83,
+                agent="pi",
+                provider="stale-default",
+                model="MiniMax-M3",
+                dispatch_type="fix",
+                cwd="/tmp/wt",
+                session_name="fix-tms#83",
             )
             params = _last_insert_params(cursor)
-            assert params[7] == "minimax", (
-                "explicit model should override stale default provider"
-            )
+            assert params[7] == "minimax", "explicit model should override stale default provider"
             assert params[8] == "MiniMax-M3"
 
     def test_empty_both_resolves_from_defaults(self):
         """Empty provider + model resolves from pi settings defaults."""
         with patch("psycopg2.connect") as mock_connect:
             cursor = _capture_insert(mock_connect)
-            with patch("tmq.events._resolve_default_model",
-                       return_value=("deepseek", "deepseek-v4-pro")):
+            with patch("tmq.events._resolve_default_model", return_value=("deepseek", "deepseek-v4-pro")):
                 from tmq.events import log_dispatch
 
                 log_dispatch(
-                    repo="tms", issue=83, agent="pi",
-                    provider="", model="",
-                    dispatch_type="fix", cwd="/tmp/wt", session_name="fix-tms#83",
+                    repo="tms",
+                    issue=83,
+                    agent="pi",
+                    provider="",
+                    model="",
+                    dispatch_type="fix",
+                    cwd="/tmp/wt",
+                    session_name="fix-tms#83",
                 )
                 params = _last_insert_params(cursor)
                 assert params[7] == "deepseek"
@@ -147,9 +169,13 @@ class TestLogDispatchFailedProviderResolution:
             from tmq.events import log_dispatch_failed
 
             log_dispatch_failed(
-                repo="tms", issue=83, agent="pi",
-                provider="", model="MiniMax-M3.5",
-                dispatch_type="fix", reason="aoe add failed",
+                repo="tms",
+                issue=83,
+                agent="pi",
+                provider="",
+                model="MiniMax-M3.5",
+                dispatch_type="fix",
+                reason="aoe add failed",
             )
             params = _last_insert_params(cursor)
             assert params[7] == "minimax"
@@ -159,14 +185,17 @@ class TestLogDispatchFailedProviderResolution:
         """Failed dispatch with no model resolves from pi settings."""
         with patch("psycopg2.connect") as mock_connect:
             cursor = _capture_insert(mock_connect)
-            with patch("tmq.events._resolve_default_model",
-                       return_value=("zai", "glm-5.2")):
+            with patch("tmq.events._resolve_default_model", return_value=("zai", "glm-5.2")):
                 from tmq.events import log_dispatch_failed
 
                 log_dispatch_failed(
-                    repo="tms", issue=83, agent="pi",
-                    provider="", model="",
-                    dispatch_type="fix", reason="timeout",
+                    repo="tms",
+                    issue=83,
+                    agent="pi",
+                    provider="",
+                    model="",
+                    dispatch_type="fix",
+                    reason="timeout",
                 )
                 params = _last_insert_params(cursor)
                 assert params[7] == "zai"
