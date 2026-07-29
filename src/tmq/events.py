@@ -43,6 +43,7 @@ import os
 import sys
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 log = logging.getLogger("tmq.events")
@@ -193,7 +194,7 @@ def _resolve_default_model() -> tuple[str, str]:
     """
     import json as _json
 
-    settings_path = os.path.expanduser("~/.pi/agent/settings.json")
+    settings_path = Path("~/.pi/agent/settings.json").expanduser()
     try:
         with open(settings_path) as f:
             settings = _json.load(f)
