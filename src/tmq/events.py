@@ -241,12 +241,17 @@ def log_dispatch(
     session_name: str,
     aoe_id: str = "",
     status: str = "ok",
+    installed_command: str = "",
     dsn: str = "",
 ) -> str:
     """Convenience wrapper: the success path the bash tool emitted at the
     end of `spawn_agent`. ``status`` carries the transport (aoe/tmux)
     so the metrics rows distinguish them; aoe_id is the 8-char prefix
     the bash tool computed via ``aoe session show --json``.
+
+    ``installed_command`` (tms#117): the command verifiably installed for
+    the session (read back post-add), not just the requested flags —
+    served-command provenance. Empty = unverified.
     """
     provider, model = _resolve_dispatch_model(provider, model)
     return append_event(
@@ -260,7 +265,10 @@ def log_dispatch(
         worktree=cwd,
         session=session_name,
         aoe_id_prefix=aoe_id[:8] if aoe_id else "",
-        payload_extra={"status": status},
+        payload_extra={
+            "status": status,
+            "installed_command": installed_command or None,
+        },
         dsn=dsn,
     )
 
