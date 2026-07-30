@@ -21,6 +21,7 @@ handlers test it with mocked subprocess without spinning up tmux.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -62,6 +63,39 @@ class SpawnResult:
         return self.mode in {"aoe", "tmux"} and self.failure_reason is None
 
 
+def _modern_node_prefix() -> str:
+    """Inline PATH prefix pinning the newest nvm node >= 22 for the pane.
+
+    Panes spawned from cron or the long-lived aoe daemon can inherit a
+    PATH where /usr/bin/node (distro v20) precedes nvm — and pi is a
+    node script (``#!/usr/bin/env node``) whose bundled undici crashes
+    on Node 20 at startup (``webidl.util.markAsUncloneable``), killing
+    dispatched reviewers seconds after spawn. Mirrors
+    ``tms/bin/tmq:tmq_node22_prefix``. Best-effort: no nvm install →
+    ``""`` → inherited PATH (previous behavior).
+    """
+    nvm_dir = Path(os.environ.get("NVM_DIR") or Path.home() / ".nvm")
+    versions = nvm_dir / "versions" / "node"
+    try:
+        entries = list(versions.iterdir())
+    except OSError:
+        return ""
+    best: tuple[int, int, int] | None = None
+    best_path: Path | None = None
+    for d in entries:
+        m = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", d.name)
+        if not m:
+            continue
+        ver = (int(m[1]), int(m[2]), int(m[3]))
+        if ver < (22, 0, 0) or not (d / "bin" / "node").is_file():
+            continue
+        if best is None or ver > best:
+            best, best_path = ver, d
+    if best_path is None:
+        return ""
+    return f"PATH='{best_path}/bin':\"$PATH\" "
+
+
 def _is_root() -> bool:
     return os.geteuid() == 0
 
@@ -100,7 +134,7 @@ def _build_cmd_override(req: SpawnRequest) -> str:
             extra += f" --provider {req.pi_provider}"
         if req.pi_model:
             extra += f" --model {req.pi_model}"
-        return f"PI_DISPATCH_AUTOAPPROVE=1 pi{extra} --approve @{p}; echo; echo '--- PI DONE ---'; exec bash"
+        return f"{_modern_node_prefix()}PI_DISPATCH_AUTOAPPROVE=1 pi{extra} --approve @{p}; echo; echo '--- PI DONE ---'; exec bash"
     if req.agent == "oc":
         return f"cat '{p}' | opencode 2>&1; echo; echo '--- OPENCODE DONE ---'; exec bash"
     raise SpawnError(f"unknown agent: {req.agent!r}")
