@@ -111,9 +111,7 @@ def test_modern_node_prefix_picks_newest_ge_22(tmp_path, monkeypatch):
     _mk_node(tmp_path, "v22.15.0")
     _mk_node(tmp_path, "v22.19.0")
     monkeypatch.setenv("NVM_DIR", str(tmp_path))
-    assert spawn._modern_node_prefix() == (
-        f"PATH='{tmp_path}/versions/node/v22.19.0/bin':\"$PATH\" "
-    )
+    assert spawn._modern_node_prefix() == (f"PATH='{tmp_path}/versions/node/v22.19.0/bin':\"$PATH\" ")
 
 
 def test_modern_node_prefix_ignores_below_22(tmp_path, monkeypatch):
@@ -137,7 +135,8 @@ def test_modern_node_prefix_missing_nvm_dir(tmp_path, monkeypatch):
 
 def test_pi_cmd_override_starts_with_node_prefix(monkeypatch):
     monkeypatch.setattr(
-        spawn, "_modern_node_prefix",
+        spawn,
+        "_modern_node_prefix",
         lambda: "PATH='/x/y/bin':\"$PATH\" ",
     )
     cmd = _build_cmd_override(_req("pi"))

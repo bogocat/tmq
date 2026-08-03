@@ -21,6 +21,7 @@ handlers test it with mocked subprocess without spinning up tmux.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -234,8 +235,16 @@ def _spawn_via_aoe(req: SpawnRequest, cmd_override: str) -> SpawnResult:
             )
     # tms#117: post-add verification — never trust that the registration we
     # just made is the one that will run. Read back the stored command and
-    # require an exact match. None (unreadable) degrades to unverified.
+    # require an exact match. None (unreadable) degrades to unverified —
+    # loudly, so a schema drift can't silently disable the check fleet-wide.
     installed = _stored_session_command(req.session_name)
+    if installed is None:
+        logging.getLogger("tmq.spawn").warning(
+            "post-add verification unavailable for %s: could not read back "
+            "the stored command (aoe missing/schema drift?) — proceeding "
+            "unverified (tms#117)",
+            req.session_name,
+        )
     if installed is not None and installed != cmd_override:
         raise SpawnError(
             f"aoe stored a DIFFERENT command than requested for "
