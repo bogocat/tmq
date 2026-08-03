@@ -154,18 +154,17 @@ def test_pr_prompt_excludes_agent_state_contract():
     """Review prompts must NOT carry the author state contract — reviewers
     were emitting MERGE-READY (an author-only signal) and idling forever."""
     output = prompt.build_pr_prompt(_prompt_input(), _fake_pr(), session_name="review-tmq#10")
-    assert prompt.AGENTS_MARKER_CONTRACT not in output, \
+    assert prompt.AGENTS_MARKER_CONTRACT not in output, (
         "AGENTS_MARKER_CONTRACT must not appear in review prompts (author-only)"
-    assert "<<AGENT-STATE: MERGE-READY>>" not in output, \
-        "review prompt must not teach the MERGE-READY marker"
+    )
+    assert "<<AGENT-STATE: MERGE-READY>>" not in output, "review prompt must not teach the MERGE-READY marker"
 
 
 def test_pr_prompt_forbids_agent_state_markers():
     """Review prompts must explicitly forbid AGENT-STATE and name
     MERGE-READY as never a reviewer's call."""
     output = prompt.build_pr_prompt(_prompt_input(), _fake_pr(), session_name="review-tmq#10")
-    assert "Do NOT print <<AGENT-STATE" in output, \
-        "review prompt must forbid AGENT-STATE markers"
+    assert "Do NOT print <<AGENT-STATE" in output, "review prompt must forbid AGENT-STATE markers"
     assert "author-only" in output
     assert "MERGE-READY" in output
 
@@ -175,12 +174,9 @@ def test_pr_prompt_self_closes_after_verdict():
     own session — aoe rm --purge with a tmux kill-session fallback,
     interpolating the real session name."""
     output = prompt.build_pr_prompt(_prompt_input(), _fake_pr(), session_name="review-tmq#10")
-    assert 'aoe rm "review-tmq#10" --purge' in output, \
-        "review prompt lost the aoe rm --purge self-close step"
-    assert 'tmux kill-session -t "review-tmq#10"' in output, \
-        "review prompt lost the tmux kill-session fallback"
-    assert "--delete-worktree" not in output, \
-        "self-close must never delete a (possibly shared) worktree"
+    assert 'aoe rm "review-tmq#10" --purge' in output, "review prompt lost the aoe rm --purge self-close step"
+    assert 'tmux kill-session -t "review-tmq#10"' in output, "review prompt lost the tmux kill-session fallback"
+    assert "--delete-worktree" not in output, "self-close must never delete a (possibly shared) worktree"
 
 
 def test_issue_prompt_keeps_author_contract_and_no_lifecycle():
@@ -195,5 +191,6 @@ def test_issue_prompt_keeps_author_contract_and_no_lifecycle():
 def test_marker_contract_marked_author_only():
     """The state-contract text itself must say it is author-only, so a
     reviewer that sees it quoted elsewhere still knows not to use it."""
-    assert "author" in prompt.AGENTS_MARKER_CONTRACT.lower(), \
+    assert "author" in prompt.AGENTS_MARKER_CONTRACT.lower(), (
         "AGENTS_MARKER_CONTRACT must state it applies to authors only"
+    )
