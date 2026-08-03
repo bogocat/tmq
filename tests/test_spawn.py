@@ -111,9 +111,7 @@ def test_modern_node_prefix_picks_newest_ge_22(tmp_path, monkeypatch):
     _mk_node(tmp_path, "v22.15.0")
     _mk_node(tmp_path, "v22.19.0")
     monkeypatch.setenv("NVM_DIR", str(tmp_path))
-    assert spawn._modern_node_prefix() == (
-        f"PATH='{tmp_path}/versions/node/v22.19.0/bin':\"$PATH\" "
-    )
+    assert spawn._modern_node_prefix() == (f"PATH='{tmp_path}/versions/node/v22.19.0/bin':\"$PATH\" ")
 
 
 def test_modern_node_prefix_ignores_below_22(tmp_path, monkeypatch):
@@ -137,7 +135,8 @@ def test_modern_node_prefix_missing_nvm_dir(tmp_path, monkeypatch):
 
 def test_pi_cmd_override_starts_with_node_prefix(monkeypatch):
     monkeypatch.setattr(
-        spawn, "_modern_node_prefix",
+        spawn,
+        "_modern_node_prefix",
         lambda: "PATH='/x/y/bin':\"$PATH\" ",
     )
     cmd = _build_cmd_override(_req("pi"))
@@ -183,59 +182,129 @@ def test_spawn_via_aoe_includes_cmd_override_with_approve():
     assert "--approve" in cmd
 
 
+class _FakeAoe:
+    """String-returning `_run` stand-in with a one-slot session store, so
+    the spawn flow (rm/add/show/start) behaves like aoe 1.13 — including
+    the duplicate-add exit-0 no-op (tms#117): `aoe add` over an existing
+    registration prints "Session already exists..." and returns success
+    while keeping the OLD stored command.
+
+    ``purge_fail_count``: the first N `aoe rm` calls silently do nothing
+    (simulates the purge failing / daemon lag). ``store_corrupted``: adds
+    store a mangled command (simulates a stored-command mismatch).
+    """
+
+    def __init__(
+        self,
+        *,
+        preexisting_command: str | None = None,
+        purge_fail_count: int = 0,
+        store_corrupted: bool = False,
+    ):
+        self.calls: list[list[str]] = []
+        self.stored = preexisting_command
+        self.purge_fail_count = purge_fail_count
+        self.store_corrupted = store_corrupted
+
+    def __call__(self, args, **kwargs):
+        self.calls.append(list(args))
+        if args[:2] == ["aoe", "rm"]:
+            if self.purge_fail_count > 0:
+                self.purge_fail_count -= 1
+            else:
+                self.stored = None
+            return ""
+        if args[:2] == ["aoe", "add"]:
+            if self.stored is not None:
+                return "Session already exists with same title and path: x"
+            override = args[args.index("--cmd-override") + 1]
+            self.stored = f"CORRUPTED {override}" if self.store_corrupted else override
+            return "Added session"
+        if args[:3] == ["aoe", "session", "show"]:
+            if self.stored is None:
+                raise spawn.SpawnError("`aoe session show` exited 1: not found")
+            import json as _json
+
+            return _json.dumps({"id": "abcdef1234567890", "command": self.stored})
+        return ""
+
+    def started(self) -> bool:
+        return any(c[:3] == ["aoe", "session", "start"] for c in self.calls)
+
+
+def _drive(req: SpawnRequest, fake: _FakeAoe):
+    with mock.patch.object(spawn.shutil, "which", return_value="/usr/local/bin/aoe"):
+        with mock.patch.object(spawn, "_run", side_effect=fake):
+            with mock.patch.object(spawn, "prompt_path_for", return_value=req.prompt_path):
+                return spawn_top(req)
+
+
 def _captured_aoe_call_sequence(req: SpawnRequest) -> list[list[str]]:
     """Drive spawn.spawn() with all subprocess calls mocked, capture the
     full sequence of `_run` argv calls (rm, add, session start, etc.).
     """
-    captured: list[list[str]] = []
-
-    def fake_run(args, **kwargs):
-        captured.append(list(args))
-        m = mock.Mock()
-        m.returncode = 0
-        m.stdout = '{"id": "abcdef1234567890"}'
-        m.stderr = ""
-        return m
-
-    with mock.patch.object(spawn.shutil, "which", return_value="/usr/local/bin/aoe"):
-        with mock.patch.object(spawn, "_run", side_effect=fake_run):
-            with mock.patch.object(spawn, "prompt_path_for", return_value=req.prompt_path):
-                try:
-                    spawn_top(req)
-                except spawn.SpawnError:
-                    pass
-    return captured
+    fake = _FakeAoe()
+    try:
+        _drive(req, fake)
+    except spawn.SpawnError:
+        pass
+    return fake.calls
 
 
 def _captured_aoe_argv(req: SpawnRequest) -> list[str]:
     """Drive spawn.spawn() with all subprocess calls mocked, capture the
-    `aoe add` argv. Returns the empty list when aoe is missing -- the
-    test caller asserts shape from the captured argv directly.
-    """
-    captured: list[list[str]] = []
+    first `aoe add` argv."""
+    fake = _FakeAoe()
+    try:
+        _drive(req, fake)
+    except spawn.SpawnError:
+        pass  # ignore cleanup-path failures; we only care about argv
+    adds = [c for c in fake.calls if c[:2] == ["aoe", "add"]]
+    assert adds, "aoe add was not invoked"
+    return adds[0]
 
-    def fake_run(args, **kwargs):
-        if args and args[0] == "aoe" and args[1] == "add":
-            captured.append(list(args))
-            # Return a fake CompletedProcess-like object.
-            m = mock.Mock()
-            m.returncode = 0
-            m.stdout = ""
-            m.stderr = ""
-            return m
-        # aoe session start + aoe session show stubs.
-        m = mock.Mock()
-        m.returncode = 0
-        m.stdout = '{"id": "abcdef1234567890"}'
-        m.stderr = ""
-        return m
 
-    with mock.patch.object(spawn.shutil, "which", return_value="/usr/local/bin/aoe"):
-        with mock.patch.object(spawn, "_run", side_effect=fake_run):
-            with mock.patch.object(spawn, "prompt_path_for", return_value=req.prompt_path):
-                try:
-                    spawn_top(req)
-                except spawn.SpawnError:
-                    pass  # ignore cleanup-path failures; we only care about argv
-    assert captured, "aoe add was not invoked"
-    return captured[0]
+# ── post-add verification (tms#117) ────────────────────────────────────
+
+OLD_CMD = "PI_DISPATCH_AUTOAPPROVE=1 pi --provider minimax --model MiniMax-M3 --approve @/tmp/old.txt"
+
+
+def test_fresh_dispatch_returns_verified_installed_command():
+    req = _req("pi", branch=None)
+    fake = _FakeAoe()
+    result = _drive(req, fake)
+    assert result.mode == "aoe"
+    assert result.installed_command == _build_cmd_override(req)
+    assert fake.started()
+
+
+def test_stale_registration_survives_first_purge_then_replaced():
+    """The tms#117 AC repro: a stale registration whose first purge
+    silently fails must be detected via the duplicate marker, purged
+    again, and re-added — the NEW command runs, never the old one."""
+    req = _req("pi", branch=None, pi_provider="deepseek", pi_model="deepseek-v4-pro")
+    fake = _FakeAoe(preexisting_command=OLD_CMD, purge_fail_count=1)
+    result = _drive(req, fake)
+    assert "deepseek-v4-pro" in fake.stored
+    assert "MiniMax-M3" not in fake.stored
+    assert result.installed_command == _build_cmd_override(req)
+    adds = [c for c in fake.calls if c[:2] == ["aoe", "add"]]
+    assert len(adds) == 2, "duplicate no-op add must be retried after purge"
+    assert fake.started()
+
+
+def test_persistent_duplicate_fails_loud_and_never_starts():
+    req = _req("pi", branch=None)
+    fake = _FakeAoe(preexisting_command=OLD_CMD, purge_fail_count=99)
+    with pytest.raises(spawn.SpawnError, match="still reports an existing session"):
+        _drive(req, fake)
+    assert not fake.started(), "stale session must never be started"
+    assert fake.stored == OLD_CMD, "stale command must be left untouched"
+
+
+def test_stored_command_mismatch_fails_loud_and_never_starts():
+    req = _req("pi", branch=None)
+    fake = _FakeAoe(store_corrupted=True)
+    with pytest.raises(spawn.SpawnError, match="DIFFERENT command"):
+        _drive(req, fake)
+    assert not fake.started()

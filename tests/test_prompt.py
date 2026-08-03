@@ -79,8 +79,7 @@ def test_prompt_section_ordering():
     chunking_pos = output.index("Chunking policy")
     body_pos = output.index("Issue body")
     assert ac_pos < contract_pos < chunking_pos < body_pos, (
-        f"section order wrong: AC={ac_pos} contract={contract_pos} "
-        f"chunking={chunking_pos} body={body_pos}"
+        f"section order wrong: AC={ac_pos} contract={contract_pos} chunking={chunking_pos} body={body_pos}"
     )
 
 

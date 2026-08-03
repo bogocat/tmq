@@ -20,6 +20,8 @@ handlers test it with mocked subprocess without spinning up tmux.
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
 import shutil
@@ -29,6 +31,11 @@ from pathlib import Path
 
 CC_ROOT_ENV = "TMQ_ALLOW_ROOT_CC"
 PROMPT_DIR = "/tmp"
+
+# tms#117: `aoe add` for an existing (title, path) prints "Session already
+# exists with same title and path" and EXITS 0 — a silent no-op that keeps
+# the old stored command. The exit code is not a signal; this marker is.
+DUPLICATE_MARKER = "already exists"
 
 
 class SpawnError(RuntimeError):
@@ -57,6 +64,10 @@ class SpawnResult:
     prompt_path: str
     monitor_hint: str  # "aoe status" vs "tmux a -t <name>"
     failure_reason: str | None = None
+    # tms#117: the command verifiably installed for the session — read back
+    # from `aoe session show --json` (aoe mode) or constructed verbatim
+    # (tmux mode). Empty = could not be verified (aoe schema drift).
+    installed_command: str = ""
 
     @property
     def ok(self) -> bool:
@@ -186,24 +197,60 @@ def _spawn_via_aoe(req: SpawnRequest, cmd_override: str) -> SpawnResult:
     except SpawnError:
         pass
 
+    add_argv = [
+        "aoe",
+        "add",
+        req.cwd,
+        "-t",
+        req.session_name,
+        "--tool",
+        aoe_tool,
+        *wt_flags,
+        "--trust-hooks",
+        "--cmd-override",
+        cmd_override,
+    ]
     try:
-        _run(
-            [
-                "aoe",
-                "add",
-                req.cwd,
-                "-t",
-                req.session_name,
-                "--tool",
-                aoe_tool,
-                *wt_flags,
-                "--trust-hooks",
-                "--cmd-override",
-                cmd_override,
-            ]
-        )
+        add_out = _run(add_argv)
     except SpawnError as exc:
         raise SpawnError(f"aoe add failed: {exc}") from exc
+    # tms#117: the rm --purge above is best-effort. If the stale record
+    # survived, `aoe add` no-ops with exit 0 and the duplicate marker —
+    # purge again and retry once; a second duplicate fails loud (never
+    # start a session whose stored command we didn't install).
+    if DUPLICATE_MARKER in add_out.lower():
+        try:
+            _run(["aoe", "rm", "--purge", req.session_name], check=False)
+        except SpawnError:
+            pass
+        try:
+            add_out = _run(add_argv)
+        except SpawnError as exc:
+            raise SpawnError(f"aoe add failed on retry: {exc}") from exc
+        if DUPLICATE_MARKER in add_out.lower():
+            raise SpawnError(
+                f"aoe still reports an existing session for {req.session_name!r} "
+                f"after `aoe rm --purge`; the stale registration (and its old "
+                f"stored command) survived — refusing to start it (tms#117)"
+            )
+    # tms#117: post-add verification — never trust that the registration we
+    # just made is the one that will run. Read back the stored command and
+    # require an exact match. None (unreadable) degrades to unverified —
+    # loudly, so a schema drift can't silently disable the check fleet-wide.
+    installed = _stored_session_command(req.session_name)
+    if installed is None:
+        logging.getLogger("tmq.spawn").warning(
+            "post-add verification unavailable for %s: could not read back "
+            "the stored command (aoe missing/schema drift?) — proceeding "
+            "unverified (tms#117)",
+            req.session_name,
+        )
+    if installed is not None and installed != cmd_override:
+        raise SpawnError(
+            f"aoe stored a DIFFERENT command than requested for "
+            f"{req.session_name!r} (stored={installed!r}); purge with "
+            f"`aoe rm {req.session_name} --purge` and re-dispatch (tms#117)"
+        )
     try:
         _run(["aoe", "session", "start", req.session_name])
     except SpawnError as exc:
@@ -220,7 +267,29 @@ def _spawn_via_aoe(req: SpawnRequest, cmd_override: str) -> SpawnResult:
         session_name=req.session_name,
         prompt_path=str(req.prompt_path),
         monitor_hint="aoe status",
+        installed_command=installed or "",
     )
+
+
+def _stored_session_command(session_name: str) -> str | None:
+    """Read back the command aoe stored for ``session_name``.
+
+    Returns the stored command string, or None when it cannot be read
+    (session missing, aoe schema drift, unparseable JSON). None means
+    "unverifiable", not "mismatch" — the caller decides how loud to be.
+    """
+    try:
+        out = _run(["aoe", "session", "show", session_name, "--json"])
+    except SpawnError:
+        return None
+    try:
+        parsed = json.loads(out)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    cmd = parsed.get("command")
+    return cmd if isinstance(cmd, str) else None
 
 
 def _spawn_via_tmux(req: SpawnRequest, cmd_override: str) -> SpawnResult:
@@ -249,6 +318,8 @@ def _spawn_via_tmux(req: SpawnRequest, cmd_override: str) -> SpawnResult:
         session_name=req.session_name,
         prompt_path=str(req.prompt_path),
         monitor_hint=f"tmux a -t {req.session_name}",
+        # tmux installs cmd_override verbatim — no read-back surface exists.
+        installed_command=cmd_override,
     )
 
 

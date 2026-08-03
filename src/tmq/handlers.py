@@ -360,6 +360,7 @@ def _spawn_with_event(
             session_name=result.session_name,
             aoe_id=aoe_id,
             status=spawned.mode,
+            installed_command=spawned.installed_command,
             dsn=settings.events_dsn,
         )
     except events.EventError as exc:
