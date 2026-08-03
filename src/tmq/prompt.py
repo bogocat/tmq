@@ -95,6 +95,26 @@ greps your pane for these markers; without them you are invisible.
 
 """
 
+REVIEW_VERDICT_CONTRACT = """\
+## Verdict contract (review dispatches)
+
+Post your review as a PR COMMENT (`gh pr comment`), and end the comment
+with EXACTLY one machine-parseable verdict line. The fleet poller
+(`tms events scan-reviews`) parses ONLY this line — a review without it
+is invisible and the PR will be re-dispatched:
+
+  <<REVIEW-VERDICT: PASS sha=<pr-head-sha> rounds=<n> panel=<model,...>>>
+  <<REVIEW-VERDICT: FAIL sha=<pr-head-sha> p0=<n> p1=<n> rounds=<n> panel=<model,...>>>
+
+`sha=` must be the PR head at review time
+(`gh pr view <num> --json headRefOid`). A GitHub PR *review*
+(approve/request-changes) alone does NOT count — the verdict line must
+be in a comment.
+
+---
+
+"""
+
 ISSUE_HEADER_TEMPLATE = """\
 ## Issue body
 
@@ -166,6 +186,7 @@ def build_pr_prompt(p: PromptInput, pr: PrView) -> str:
         _header(p),
         AC_HEADER,
         AGENTS_MARKER_CONTRACT,
+        REVIEW_VERDICT_CONTRACT,
         _pr_body(pr),
     ]
     return "\n".join(parts)
