@@ -97,7 +97,7 @@ def test_pr_prompt_excludes_chunking_policy():
         base_ref="main",
         head_ref="feat/test",
     )
-    output = prompt.build_pr_prompt(pi, pr)
+    output = prompt.build_pr_prompt(pi, pr, session_name="review-tmq#10")
     assert prompt.CHUNKING_POLICY not in output, "CHUNKING_POLICY must not leak into PR review prompts"
 
 
@@ -121,7 +121,7 @@ def test_pr_prompt_teaches_review_verdict_contract():
         base_ref="main",
         head_ref="feat/test",
     )
-    output = prompt.build_pr_prompt(_prompt_input(), pr)
+    output = prompt.build_pr_prompt(_prompt_input(), pr, session_name="review-tmq#10")
     assert "<<REVIEW-VERDICT: PASS sha=" in output
     assert "<<REVIEW-VERDICT: FAIL sha=" in output
     assert "gh pr comment" in output
@@ -131,3 +131,69 @@ def test_issue_prompt_excludes_verdict_contract():
     """The verdict contract is review-only; issue prompts must not see it."""
     output = prompt.build_issue_prompt(_prompt_input(), _fake_issue())
     assert "REVIEW-VERDICT" not in output
+
+
+# ── tms#138: reviewer lifecycle — one marker per role + self-close ──
+
+
+def _fake_pr():
+    from tmq.gh import PrView
+
+    return PrView(
+        number=10,
+        title="Test PR",
+        body="PR body",
+        url="https://github.com/bogocat/tmq/pull/10",
+        state="OPEN",
+        base_ref="main",
+        head_ref="feat/test",
+    )
+
+
+def test_pr_prompt_excludes_agent_state_contract():
+    """Review prompts must NOT carry the author state contract — reviewers
+    were emitting MERGE-READY (an author-only signal) and idling forever."""
+    output = prompt.build_pr_prompt(_prompt_input(), _fake_pr(), session_name="review-tmq#10")
+    assert prompt.AGENTS_MARKER_CONTRACT not in output, \
+        "AGENTS_MARKER_CONTRACT must not appear in review prompts (author-only)"
+    assert "<<AGENT-STATE: MERGE-READY>>" not in output, \
+        "review prompt must not teach the MERGE-READY marker"
+
+
+def test_pr_prompt_forbids_agent_state_markers():
+    """Review prompts must explicitly forbid AGENT-STATE and name
+    MERGE-READY as never a reviewer's call."""
+    output = prompt.build_pr_prompt(_prompt_input(), _fake_pr(), session_name="review-tmq#10")
+    assert "Do NOT print <<AGENT-STATE" in output, \
+        "review prompt must forbid AGENT-STATE markers"
+    assert "author-only" in output
+    assert "MERGE-READY" in output
+
+
+def test_pr_prompt_self_closes_after_verdict():
+    """After the verdict comment is posted the reviewer must tear down its
+    own session — aoe rm --purge with a tmux kill-session fallback,
+    interpolating the real session name."""
+    output = prompt.build_pr_prompt(_prompt_input(), _fake_pr(), session_name="review-tmq#10")
+    assert 'aoe rm "review-tmq#10" --purge' in output, \
+        "review prompt lost the aoe rm --purge self-close step"
+    assert 'tmux kill-session -t "review-tmq#10"' in output, \
+        "review prompt lost the tmux kill-session fallback"
+    assert "--delete-worktree" not in output, \
+        "self-close must never delete a (possibly shared) worktree"
+
+
+def test_issue_prompt_keeps_author_contract_and_no_lifecycle():
+    """Author prompts keep the AGENT-STATE contract and never see the
+    reviewer lifecycle section."""
+    output = prompt.build_issue_prompt(_prompt_input(), _fake_issue())
+    assert prompt.AGENTS_MARKER_CONTRACT in output
+    assert "Reviewer lifecycle" not in output
+    assert "aoe rm" not in output
+
+
+def test_marker_contract_marked_author_only():
+    """The state-contract text itself must say it is author-only, so a
+    reviewer that sees it quoted elsewhere still knows not to use it."""
+    assert "author" in prompt.AGENTS_MARKER_CONTRACT.lower(), \
+        "AGENTS_MARKER_CONTRACT must state it applies to authors only"

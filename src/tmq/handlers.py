@@ -252,16 +252,18 @@ def _build_dispatch_result(
         title=title,
         tldr=body_for_prompt,
     )
-    if pr is not None:
-        body = prompt_mod.build_pr_prompt(prompt_input, pr)
-    else:
-        body = prompt_mod.build_issue_prompt(prompt_input, issue_for_prompt)  # type: ignore[arg-type]
+    # Session name is needed before the prompt: the review prompt
+    # interpolates it into the self-close teardown step (tms#138).
     session_name = spawn.session_name_for(
         repo_short=args.repo,
         number=args.number,
         issue_type=args.issue_type,
         agent=args.agent,
     )
+    if pr is not None:
+        body = prompt_mod.build_pr_prompt(prompt_input, pr, session_name=session_name)
+    else:
+        body = prompt_mod.build_issue_prompt(prompt_input, issue_for_prompt)  # type: ignore[arg-type]
     prompt_path = spawn.prompt_path_for(session_name)
     prompt_path.parent.mkdir(parents=True, exist_ok=True)
     prompt_path.write_text(body, encoding="utf-8")

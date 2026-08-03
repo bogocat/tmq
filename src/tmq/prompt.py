@@ -76,7 +76,11 @@ then wait for a human to clarify on the GitHub issue thread.
 """
 
 AGENTS_MARKER_CONTRACT = """\
-## State contract
+## State contract (authors only)
+
+These markers are for feature/fix/chore dispatches — the agent that owns
+the change. Review dispatches never print them (tms#138); a reviewer's
+only machine-readable output is the verdict line in its PR comment.
 
 Print exactly one of these lines at every transition:
 
@@ -110,6 +114,25 @@ is invisible and the PR will be re-dispatched:
 (`gh pr view <num> --json headRefOid`). A GitHub PR *review*
 (approve/request-changes) alone does NOT count — the verdict line must
 be in a comment.
+
+---
+
+"""
+
+REVIEW_LIFECYCLE_TEMPLATE = """\
+## Reviewer lifecycle (tms#138)
+
+You are a reviewer, not the author. Do NOT print <<AGENT-STATE: ...>>
+markers — those are author-only signals, and MERGE-READY in particular
+is never a reviewer's call (whether the PR merges is the author's or
+operator's decision after reading your verdict). The verdict comment
+above is your only machine-readable output.
+
+Once the verdict comment is posted, your work is complete — self-close
+this session as your ABSOLUTE FINAL action (it kills the session;
+nothing you print afterwards will run or be seen):
+
+  aoe rm "{session}" --purge 2>/dev/null || tmux kill-session -t "{session}"
 
 ---
 
@@ -180,13 +203,18 @@ def build_issue_prompt(p: PromptInput, issue: IssueView) -> str:
     return "\n".join(parts)
 
 
-def build_pr_prompt(p: PromptInput, pr: PrView) -> str:
-    """Build a review prompt. The 'AC' for review is the PR's diff + description."""
+def build_pr_prompt(p: PromptInput, pr: PrView, *, session_name: str) -> str:
+    """Build a review prompt. The 'AC' for review is the PR's diff + description.
+
+    Reviewers get the verdict + lifecycle contracts, NOT the author
+    marker contract or the AC header (both instruct AGENT-STATE markers,
+    which are author-only — tms#138). ``session_name`` is interpolated
+    into the self-close teardown step.
+    """
     parts = [
         _header(p),
-        AC_HEADER,
-        AGENTS_MARKER_CONTRACT,
         REVIEW_VERDICT_CONTRACT,
+        REVIEW_LIFECYCLE_TEMPLATE.format(session=session_name),
         _pr_body(pr),
     ]
     return "\n".join(parts)
