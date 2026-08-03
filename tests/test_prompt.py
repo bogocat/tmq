@@ -99,3 +99,35 @@ def test_pr_prompt_excludes_chunking_policy():
     )
     output = prompt.build_pr_prompt(pi, pr)
     assert prompt.CHUNKING_POLICY not in output, "CHUNKING_POLICY must not leak into PR review prompts"
+
+
+def test_pr_prompt_teaches_review_verdict_contract():
+    """Review prompts must instruct the REVIEW-VERDICT comment line.
+
+    The fleet poller (tms events scan-reviews) parses ONLY
+    <<REVIEW-VERDICT: ...>> comment lines; review prompts taught only
+    <<AGENT-STATE: ...>>, so reviewers posted AGENT-STATE / bare GitHub
+    PR reviews and the poller waited forever — ~20 PRs sat with idle
+    verdict-less reviewers for days (2026-07-30 → 2026-08-03).
+    """
+    from tmq.gh import PrView
+
+    pr = PrView(
+        number=10,
+        title="Test PR",
+        body="PR body",
+        url="https://github.com/bogocat/tmq/pull/10",
+        state="OPEN",
+        base_ref="main",
+        head_ref="feat/test",
+    )
+    output = prompt.build_pr_prompt(_prompt_input(), pr)
+    assert "<<REVIEW-VERDICT: PASS sha=" in output
+    assert "<<REVIEW-VERDICT: FAIL sha=" in output
+    assert "gh pr comment" in output
+
+
+def test_issue_prompt_excludes_verdict_contract():
+    """The verdict contract is review-only; issue prompts must not see it."""
+    output = prompt.build_issue_prompt(_prompt_input(), _fake_issue())
+    assert "REVIEW-VERDICT" not in output
