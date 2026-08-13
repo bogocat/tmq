@@ -86,7 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         help="PR number when the first arg is review/pr.",
     )
-    p.add_argument("--agent", choices=["cc", "pi", "oc"], help="Coding agent to spawn")
+    p.add_argument("--agent", choices=["cc", "pi", "oc", "dsh"], help="Coding agent to spawn")
     p.add_argument("--type", choices=["feature", "fix", "chore", "review"], help="Dispatch type")
     p.add_argument("--provider", help="Override the pi provider flag (pi only)")
     p.add_argument("--model", help="Override the pi model flag (pi only)")

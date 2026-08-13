@@ -117,7 +117,7 @@ key = "default_agent"
 label = "Default agent"
 description = "Agent used when --agent is not passed on the CLI / RPC. Mirrors DEFAULT_AGENT in tms/bin/tmq."
 type = "select"
-options = ["pi", "cc", "oc"]
+options = ["pi", "cc", "oc", "dsh"]
 default = "pi"
 
 # Forwarded to pi's --provider flag. Empty = pi default provider.
@@ -126,7 +126,7 @@ default = "pi"
 [[settings]]
 key = "pi_provider"
 label = "Default pi provider"
-description = "Passed to pi's --provider flag on every pi dispatch (empty = pi default). pi-only; cc/oc ignore it."
+description = "Passed to pi's --provider flag on every pi dispatch (empty = pi default). pi-only; cc/oc/dsh ignore it."
 type = "string"
 default = ""
 
@@ -134,7 +134,7 @@ default = ""
 [[settings]]
 key = "pi_model"
 label = "Default pi model"
-description = "Passed to pi's --model flag on every pi dispatch (empty = pi default). pi-only; cc/oc ignore it."
+description = "Passed to pi's --model flag on every pi dispatch (empty = pi default). pi-only; cc/oc/dsh ignore it."
 type = "string"
 default = ""
 
