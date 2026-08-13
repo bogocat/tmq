@@ -148,6 +148,11 @@ def _build_cmd_override(req: SpawnRequest) -> str:
         return f"{_modern_node_prefix()}PI_DISPATCH_AUTOAPPROVE=1 pi{extra} --approve @{p}; echo; echo '--- PI DONE ---'; exec bash"
     if req.agent == "oc":
         return f"cat '{p}' | opencode 2>&1; echo; echo '--- OPENCODE DONE ---'; exec bash"
+    if req.agent == "dsh":
+        # DSH_PERMISSION_MODE=danger-full-access = unsandboxed + no approval
+        # (parity with pi/cc/oc dispatch; deliberate tradeoff). The API key
+        # resolves from ~/.dsh/.credentials.yaml, never the environment.
+        return f"{_modern_node_prefix()}DSH_PERMISSION_MODE=danger-full-access dsh --profile headless \"$(cat '{p}')\"; echo; echo '--- DSH DONE ---'; exec bash"
     raise SpawnError(f"unknown agent: {req.agent!r}")
 
 
@@ -334,6 +339,10 @@ def spawn(req: SpawnRequest) -> SpawnResult:
     req.prompt_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = _build_cmd_override(req)
+    # dsh is headless one-shot; aoe rejects --cmd-override for custom agents
+    # (no built-in dsh tool), so dsh always runs via raw tmux (no aoe id).
+    if req.agent == "dsh":
+        return _spawn_via_tmux(req, cmd)
     try:
         aoe_result = _spawn_via_aoe(req, cmd)
     except SpawnError:
@@ -369,7 +378,7 @@ def session_name_for(*, repo_short: str, number: int, issue_type: str, agent: st
         "chore": f"chore-{repo_short}#{number}",
         "review": f"review-{repo_short}#{number}",
     }.get(issue_type, f"feat-{repo_short}#{number}")
-    return f"{base}-cc" if agent == "cc" else f"{base}-{agent}" if agent == "oc" else base
+    return f"{base}-cc" if agent == "cc" else f"{base}-{agent}" if agent in ("oc", "dsh") else base
 
 
 def prompt_path_for(session_name: str) -> Path:

@@ -47,7 +47,7 @@ ERR_USER = -32001
 ERR_EXTERNAL = -32002
 ERR_INTERNAL = -32603
 
-ALLOWED_AGENTS = {"cc", "pi", "oc"}
+ALLOWED_AGENTS = {"cc", "pi", "oc", "dsh"}
 ALLOWED_TYPES = {"feature", "fix", "chore", "review"}
 
 
