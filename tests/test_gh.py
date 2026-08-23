@@ -90,3 +90,19 @@ def test_gh_not_found_raises_helpful_error():
 def test_slugify_lowercase_dashes():
     assert gh.slugify("Hello, World!") == "hello-world"
     assert gh.slugify("   ") == "x"
+
+
+def test_latest_verdict_comment_returns_most_recent_verdict():
+    comments = [
+        "early comment, no verdict",
+        "review round 1\n<<REVIEW-VERDICT: FAIL sha=aaa p0=1 p1=0 rounds=1 panel=x>>",
+        "review round 2\n<<REVIEW-VERDICT: PASS sha=bbb rounds=2 panel=y>>",
+    ]
+    got = gh.latest_verdict_comment(comments)
+    assert got is not None
+    assert "PASS sha=bbb" in got
+
+
+def test_latest_verdict_comment_none_when_absent():
+    assert gh.latest_verdict_comment(["no verdict here", "still nothing"]) is None
+    assert gh.latest_verdict_comment([]) is None

@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="PR number when the first arg is review/pr.",
     )
     p.add_argument("--agent", choices=["cc", "pi", "oc"], help="Coding agent to spawn")
-    p.add_argument("--type", choices=["feature", "fix", "chore", "review"], help="Dispatch type")
+    p.add_argument("--type", choices=["feature", "fix", "chore", "review", "fix-review"], help="Dispatch type")
     p.add_argument("--provider", help="Override the pi provider flag (pi only)")
     p.add_argument("--model", help="Override the pi model flag (pi only)")
     return p
@@ -156,6 +156,26 @@ def main(argv: list[str] | None = None) -> int:
             number=number,
             agent=args.agent,
             type_override="review",
+            provider=args.provider,
+            model=args.model,
+            settings=settings,
+        )
+
+    # Fix-review shortcut: `tmq fix-review <repo> <pr>` (alias: fixreview).
+    if cmd in {"fix-review", "fixreview"}:
+        if not (second and third):
+            parser.error(f"`tmq {cmd}` requires <repo> and <pr>")
+            return 2
+        try:
+            number = int(third)
+        except ValueError:
+            parser.error(f"PR must be an integer (got {third!r})")
+            return 2
+        return _dispatch(
+            repo=second,
+            number=number,
+            agent=args.agent,
+            type_override="fix-review",
             provider=args.provider,
             model=args.model,
             settings=settings,

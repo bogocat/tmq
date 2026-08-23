@@ -194,3 +194,24 @@ def test_marker_contract_marked_author_only():
     assert "author" in prompt.AGENTS_MARKER_CONTRACT.lower(), (
         "AGENTS_MARKER_CONTRACT must state it applies to authors only"
     )
+
+
+def test_fix_review_prompt_includes_review_and_author_contract():
+    from tmq.gh import PrView
+
+    pr = PrView(
+        number=262,
+        title="PgBouncer manifests",
+        body="PR body text",
+        url="https://github.com/bogocat/tower-fleet/pull/262",
+        state="OPEN",
+        base_ref="main",
+        head_ref="feat/issue-261-pgbouncer",
+    )
+    review = "## P0\n### 1. image tag 404\n<<REVIEW-VERDICT: FAIL sha=abc p0=7 p1=2 rounds=1 panel=claude-opus-5>>"
+    out = prompt.build_fix_review_prompt(_prompt_input(), pr, review, session_name="fix-review-tower-fleet#262")
+    assert "Fix-review contract" in out
+    assert review in out, "review body must be embedded verbatim"
+    assert prompt.AGENTS_MARKER_CONTRACT in out, "fixer is the author and needs the marker contract"
+    assert "PR body (for context)" in out
+    assert "aoe rm" not in out, "fixer must NOT self-close (session stays alive for re-review)"
