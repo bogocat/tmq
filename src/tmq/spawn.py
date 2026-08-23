@@ -368,6 +368,7 @@ def session_name_for(*, repo_short: str, number: int, issue_type: str, agent: st
         "fix": f"fix-{repo_short}#{number}",
         "chore": f"chore-{repo_short}#{number}",
         "review": f"review-{repo_short}#{number}",
+        "fix-review": f"fix-review-{repo_short}#{number}",
     }.get(issue_type, f"feat-{repo_short}#{number}")
     return f"{base}-cc" if agent == "cc" else f"{base}-{agent}" if agent == "oc" else base
 

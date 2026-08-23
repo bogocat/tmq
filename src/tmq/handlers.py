@@ -48,7 +48,7 @@ ERR_EXTERNAL = -32002
 ERR_INTERNAL = -32603
 
 ALLOWED_AGENTS = {"cc", "pi", "oc"}
-ALLOWED_TYPES = {"feature", "fix", "chore", "review"}
+ALLOWED_TYPES = {"feature", "fix", "chore", "review", "fix-review"}
 
 
 class TmQCommandError(Exception):
@@ -199,6 +199,18 @@ def _check_reviewer_overlap(model: str) -> None:
         )
 
 
+def _resolve_pr(entry: RepoEntry, number: int) -> gh.PrView:
+    """Fetch a PR, falling back to issue→PR resolution (tms#10 review P1)."""
+    try:
+        return gh.fetch_pr(entry.path, entry.gh, number)
+    except gh.GhError as exc:
+        try:
+            pr_number = gh.resolve_pr_number(entry.path, entry.gh, number)
+        except gh.GhError:
+            raise TmQExternalError(f"issue/PR lookup failed: {exc}") from exc
+        return gh.fetch_pr(entry.path, entry.gh, pr_number)
+
+
 def _build_dispatch_result(
     *,
     args: DispatchArgs,
@@ -213,18 +225,16 @@ def _build_dispatch_result(
     _validate_type(args.issue_type)
     repos = load_registry(settings.registry_path)
     entry = get_repo(repos, args.repo)
-    # Fetch issue JSON; PR review path is handled separately below so we
-    # keep dispatch short.
-    if args.issue_type == "review":
-        # Resolve issue -> PR if necessary (tms#10 review P1).
-        try:
-            pr = gh.fetch_pr(entry.path, entry.gh, args.number)
-        except gh.GhError as exc:
-            try:
-                args_number_pr = gh.resolve_pr_number(entry.path, entry.gh, args.number)
-            except gh.GhError:
-                raise TmQExternalError(f"issue/PR lookup failed: {exc}") from exc
-            pr = gh.fetch_pr(entry.path, entry.gh, args_number_pr)
+    review_body = None
+    if args.issue_type in {"review", "fix-review"}:
+        pr = _resolve_pr(entry, args.number)
+        if args.issue_type == "fix-review":
+            review_body = gh.latest_verdict_comment(gh.fetch_pr_comments(entry.path, entry.gh, pr.number))
+            if review_body is None:
+                raise TmQCommandError(
+                    f"no review verdict found on {entry.gh}#{pr.number}; "
+                    f"nothing to fix — did a review post a <<REVIEW-VERDICT>> line?"
+                )
         wt_res = wt.head_branch(entry, pr.head_ref)
         issue_for_prompt = None
     else:
@@ -260,7 +270,9 @@ def _build_dispatch_result(
         issue_type=args.issue_type,
         agent=args.agent,
     )
-    if pr is not None:
+    if pr is not None and args.issue_type == "fix-review":
+        body = prompt_mod.build_fix_review_prompt(prompt_input, pr, review_body or "", session_name=session_name)
+    elif pr is not None:
         body = prompt_mod.build_pr_prompt(prompt_input, pr, session_name=session_name)
     else:
         body = prompt_mod.build_issue_prompt(prompt_input, issue_for_prompt)  # type: ignore[arg-type]
@@ -404,6 +416,12 @@ def handle_review(params: dict[str, Any], *, settings: Settings) -> dict[str, An
     return handle_dispatch({"args": raw}, settings=settings)
 
 
+def handle_fix_review(params: dict[str, Any], *, settings: Settings) -> dict[str, Any]:
+    raw = dict(params.get("args") or {})
+    raw["type"] = "fix-review"
+    return handle_dispatch({"args": raw}, settings=settings)
+
+
 def handle_list_repos(params: dict[str, Any], *, settings: Settings) -> dict[str, Any]:
     repos = load_registry(settings.registry_path)
     fmt = str((params.get("args") or {}).get("format", "human"))
@@ -441,6 +459,7 @@ def handle_status(params: dict[str, Any], *, settings: Settings) -> dict[str, An
 HANDLERS: dict[str, Any] = {
     "dispatch": handle_dispatch,
     "review": handle_review,
+    "fix-review": handle_fix_review,
     "list_repos": handle_list_repos,
     "status": handle_status,
 }
