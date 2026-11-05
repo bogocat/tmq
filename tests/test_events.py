@@ -89,6 +89,7 @@ class TestLogDispatchProviderResolution:
             ("MiniMax-M3", "minimax"),
             ("MiniMax-M3.5", "minimax"),
             ("glm-5.2", "zai"),
+            ("k3.1-pro", "kimi-coding"),
         ],
     )
     def test_each_known_model_gets_correct_provider(self, model, expected_provider):
