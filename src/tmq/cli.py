@@ -162,7 +162,9 @@ def main(argv: list[str] | None = None) -> int:
         fmt = "machine" if args.machine else "human"
         result = _emit("list_repos", {"args": {"format": fmt}}, settings)
         if fmt == "machine":
-            print(format_machine_repos(result.get("repos") or []))
+            out = format_machine_repos(result.get("repos") or [])
+            if out:
+                print(out)
         else:
             print(result.get("text", ""))
         return 0

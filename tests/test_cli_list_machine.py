@@ -82,3 +82,52 @@ class TestMachineRowContract:
     def test_missing_worktree_key_is_0(self):
         out = format_machine_repos([{"short": "x", "path": "/x", "gh": "g/x"}])
         assert out.split("\t")[3] == "0"
+
+
+class TestMainWiresTheFlag:
+    """The half of the bug the unit tests above cannot see.
+
+    The original break was not only "no --machine in the parser" but
+    "main() hardcoded format: human". A suite that tests the parser and the
+    serializer separately stays green with that wiring reverted, which is how
+    the poller stayed silently dead. These tests exercise main() itself.
+    """
+
+    def _fake_emit(self, seen):
+        def fake(key, params, settings):
+            seen["key"] = key
+            seen["format"] = params["args"]["format"]
+            return {"repos": REPOS, "text": "deploy  bogocat/distillery  in-place  /root/deploy/distillery"}
+
+        return fake
+
+    def test_machine_is_asked_for_and_emitted(self, monkeypatch, capsys):
+        from tmq import cli
+
+        seen: dict[str, str] = {}
+        monkeypatch.setattr(cli, "_emit", self._fake_emit(seen))
+        assert cli.main(["list", "--machine"]) == 0
+        assert seen["key"] == "list_repos"
+        assert seen["format"] == "machine", "main() must forward the flag to the handler"
+        first = capsys.readouterr().out.splitlines()[0]
+        assert len(first.split("\t")) == 4
+        assert first.split("\t")[3] in {"0", "1"}
+
+    def test_human_is_the_default_and_prints_the_text(self, monkeypatch, capsys):
+        from tmq import cli
+
+        seen: dict[str, str] = {}
+        monkeypatch.setattr(cli, "_emit", self._fake_emit(seen))
+        assert cli.main(["list"]) == 0
+        assert seen["format"] == "human"
+        # The human path prints the handler's text, never tab rows.
+        out = capsys.readouterr().out
+        assert "in-place" in out
+        assert len(out.splitlines()[0].split("\t")) == 1
+
+    def test_empty_registry_prints_nothing_at_all(self, monkeypatch, capsys):
+        from tmq import cli
+
+        monkeypatch.setattr(cli, "_emit", lambda key, params, settings: {"repos": []})
+        assert cli.main(["list", "--machine"]) == 0
+        assert capsys.readouterr().out == ""
