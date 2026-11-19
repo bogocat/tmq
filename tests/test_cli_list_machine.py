@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from tmq.cli import build_parser, format_machine_repos
 
-
 REPOS = [
     {"short": "deploy", "path": "/root/deploy/distillery", "gh": "bogocat/distillery", "worktree": False},
     {"short": "distillery", "path": "/root/projects/distillery", "gh": "bogocat/distillery", "worktree": True},
