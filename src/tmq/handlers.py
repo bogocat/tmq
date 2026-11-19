@@ -39,7 +39,7 @@ from typing import Any
 from tmq import events, gh, spawn
 from tmq import prompt as prompt_mod
 from tmq import worktree as wt
-from tmq.registry import RegistryError, RepoEntry
+from tmq.registry import RegistryError, RepoEntry, machine_summary
 from tmq.registry import get as get_repo
 from tmq.registry import load as load_registry
 
@@ -408,17 +408,15 @@ def handle_list_repos(params: dict[str, Any], *, settings: Settings) -> dict[str
     repos = load_registry(settings.registry_path)
     fmt = str((params.get("args") or {}).get("format", "human"))
     if fmt == "machine":
-        return {"repos": [_entry_dict(r) for r in (repos[k] for k in sorted(repos))]}
+        # machine_summary is the ONE description of this wire format; do not
+        # inline a second copy here (see registry.machine_summary docstring).
+        return {"repos": machine_summary(repos)}
     # Human format mirrors the bash tool's column output.
     lines = [
         f"{r.short:<24} {r.gh:<32} {'worktree' if r.worktree else 'in-place':<10} {r.path}"
         for r in (repos[k] for k in sorted(repos))
     ]
     return {"text": "\n".join(lines), "count": len(repos)}
-
-
-def _entry_dict(r: RepoEntry) -> dict[str, Any]:
-    return {"short": r.short, "path": r.path, "gh": r.gh, "worktree": r.worktree}
 
 
 def handle_status(params: dict[str, Any], *, settings: Settings) -> dict[str, Any]:
