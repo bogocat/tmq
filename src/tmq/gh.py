@@ -15,6 +15,7 @@ number.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -182,6 +183,43 @@ def fetch_pr(cwd: str, gh_slug: str, number: int) -> PrView:
     return PrView.from_json(payload)
 
 
+def fetch_pr_comments(cwd: str, gh_slug: str, number: int) -> list[str]:
+    """`gh pr view --json comments` — return comment bodies in posted order.
+
+    Used by the fix-review dispatch to locate the latest reviewer verdict
+    (a comment carrying a ``<<REVIEW-VERDICT: ...>>`` line) so the fixing
+    agent is pointed at the exact P0/P1 findings it must resolve.
+    """
+    try:
+        payload = _gh(
+            ["pr", "view", str(number), "--json", "comments"],
+            cwd=cwd,
+        )
+    except GhError:
+        payload = _gh(
+            ["-R", gh_slug, "pr", "view", str(number), "--json", "comments"],
+            timeout=30.0,
+        )
+    comments = payload.get("comments") or []
+    return [str(c["body"]) for c in comments if isinstance(c, dict) and c.get("body")]
+
+
+_VERDICT_RE = re.compile(r"<<REVIEW-VERDICT:\s*(PASS|FAIL)")
+
+
+def latest_verdict_comment(comments: list[str]) -> str | None:
+    """Return the body of the most recent comment carrying a verdict line.
+
+    Reviews post their verdict as a PR comment ending in
+    ``<<REVIEW-VERDICT: PASS|FAIL ...>>`` (see tmq/prompt.py). The most
+    recent such comment is the authoritative state for a fix-review.
+    """
+    for body in reversed(comments):
+        if _VERDICT_RE.search(body):
+            return body
+    return None
+
+
 def resolve_pr_number(cwd: str, gh_slug: str, issue_number: int) -> int:
     """For an issue-number input on a review dispatch: return the linked PR number.
 
@@ -192,8 +230,6 @@ def resolve_pr_number(cwd: str, gh_slug: str, issue_number: int) -> int:
     resolves, raises GhError — the bash predecessor used the same signal
     (a non-zero `gh` with no PR found) to abort the dispatch.
     """
-    import re
-
     issue = fetch_issue(cwd, gh_slug, issue_number)
     # `gh pr list --search` over the body would be a heavier hammer — only use
     # it if the body scan misses and the issue has a closing keyword.
@@ -240,10 +276,8 @@ def slugify(text: str) -> str:
     naming in spawn.py so the 1.x callers find the same session they would
     have under the bash tool.
     """
-    import re as _re
-
     lowered = text.lower()
-    out = _re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
+    out = re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
     return out or "x"
 
 

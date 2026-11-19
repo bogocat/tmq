@@ -138,6 +138,34 @@ nothing you print afterwards will run or be seen):
 
 """
 
+FIX_REVIEW_CONTRACT = """\
+## Fix-review contract
+
+A reviewer posted a FAIL verdict on this PR. Your job is to make it pass.
+The latest review comment is reproduced verbatim below. Resolve **every
+P0 and P1** finding it lists; P2 findings are best-effort but fix them
+when cheap. Do not re-derive the review — read it, fix it.
+
+You are the AUTHOR of this change, so the author marker contract applies:
+print <<AGENT-STATE: ...>> at every transition (PLAN-REVIEW → WORKING →
+PR-REVIEW → MERGE-READY). Work on the existing PR branch — do NOT open a
+new PR. After you push the fixes, emit <<AGENT-STATE: PR-REVIEW>> and
+STOP: a fresh independent review will run at the new head. Do not review
+or self-approve your own fixes.
+
+---
+
+## Review findings (fix these)
+
+"""
+
+PR_BODY_AFTER_REVIEW = """\
+---
+
+## PR body (for context)
+
+"""
+
 ISSUE_HEADER_TEMPLATE = """\
 ## Issue body
 
@@ -215,6 +243,32 @@ def build_pr_prompt(p: PromptInput, pr: PrView, *, session_name: str) -> str:
         _header(p),
         REVIEW_VERDICT_CONTRACT,
         REVIEW_LIFECYCLE_TEMPLATE.format(session=session_name),
+        _pr_body(pr),
+    ]
+    return "\n".join(parts)
+
+
+def build_fix_review_prompt(
+    p: PromptInput,
+    pr: PrView,
+    review_body: str,
+    *,
+    session_name: str,
+) -> str:
+    """Build a fix-review prompt: fix the P0/P1s from a FAIL verdict.
+
+    The fixer is the author, so it gets the author marker contract plus
+    the verbatim review findings. ``session_name`` is accepted for
+    signature symmetry with the other builders; fixers do NOT self-close
+    (their session stays alive for the follow-up review, like a feature
+    dispatch).
+    """
+    parts = [
+        _header(p),
+        FIX_REVIEW_CONTRACT,
+        AGENTS_MARKER_CONTRACT,
+        "```markdown\n" + (review_body or "(no review body)") + "\n```\n",
+        PR_BODY_AFTER_REVIEW,
         _pr_body(pr),
     ]
     return "\n".join(parts)
