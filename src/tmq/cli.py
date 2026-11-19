@@ -37,6 +37,39 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default) or default
 
 
+def format_machine_repos(repos: list[dict[str, Any]]) -> str:
+    """Serialize `list_repos(format=machine)` rows as tab-separated lines.
+
+    Contract (do not change without changing the consumer): one row per repo,
+    four fields, in this order --
+
+        short<TAB>path<TAB>gh_repo<TAB>worktree
+
+    ``worktree`` is ``1``/``0``, not a bool or the strings ``true``/``false``:
+    ``tms``'s review poller parses it with ``int(...)`` and prefers the
+    ``worktree=1`` entry when two shorts share a gh repo (`deploy` and
+    `distillery` both map to ``bogocat/distillery``).
+
+    See `lib/tms/review_poll.py::_repo_registry` in bogocat/tms; that function
+    returning ``[]`` makes the poller report "No open PRs need review" forever.
+    """
+    lines = []
+    for r in repos:
+        worktree = r.get("worktree")
+        wt = "1" if worktree in (True, 1, "1", "true", "True") else "0"
+        lines.append(
+            "\t".join(
+                [
+                    str(r.get("short", "")),
+                    str(r.get("path", "")),
+                    str(r.get("gh", "")),
+                    wt,
+                ]
+            )
+        )
+    return "\n".join(lines)
+
+
 def settings_from_env() -> Settings:
     return Settings.from_dict(
         {
@@ -86,6 +119,15 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         help="PR number when the first arg is review/pr.",
     )
+    p.add_argument(
+        "--machine",
+        action="store_true",
+        help=(
+            "Machine-readable output. For `list`: one tab-separated row per repo "
+            "(short<TAB>path<TAB>gh_repo<TAB>worktree), consumed by tms's review "
+            "poller (`lib/tms/review_poll.py::_repo_registry`)."
+        ),
+    )
     p.add_argument("--agent", choices=["cc", "pi", "oc"], help="Coding agent to spawn")
     p.add_argument("--type", choices=["feature", "fix", "chore", "review"], help="Dispatch type")
     p.add_argument("--provider", help="Override the pi provider flag (pi only)")
@@ -117,8 +159,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # Query subcommands.
     if cmd == "list":
-        result = _emit("list_repos", {"args": {"format": "human"}}, settings)
-        print(result.get("text", ""))
+        fmt = "machine" if args.machine else "human"
+        result = _emit("list_repos", {"args": {"format": fmt}}, settings)
+        if fmt == "machine":
+            print(format_machine_repos(result.get("repos") or []))
+        else:
+            print(result.get("text", ""))
         return 0
     if cmd == "status":
         result = _emit("status", {}, settings)
